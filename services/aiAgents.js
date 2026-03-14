@@ -339,8 +339,8 @@ async function askGuide(userQuery, projectSummary = 'No project summary availabl
   if (typeof prunedSummary !== 'string') {
     prunedSummary = 'No project summary available.';
   }
-  if (prunedSummary.length > 4000) {
-    prunedSummary = prunedSummary.slice(0, 4000);
+  if (prunedSummary.length > 12000) {
+    prunedSummary = prunedSummary.slice(0, 12000);
   }
 
   const userMessage = `PROJECT ARCHITECTURE SUMMARY:

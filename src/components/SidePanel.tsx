@@ -19,8 +19,8 @@ export default function SidePanel({
 
   if (!building && districtDetails) {
     return (
-      <div className="fixed right-0 top-[64px] z-50 h-[calc(100%-64px)] w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
-        <div className="sticky top-0 border-b border-slate-700/60 bg-slate-950/95 p-5">
+      <div className="h-full w-full overflow-y-auto bg-slate-950/95">
+        <div className="sticky top-0 z-10 border-b border-slate-700/60 bg-slate-950/95 p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 rounded-full bg-cyan-300" />
@@ -35,7 +35,7 @@ export default function SidePanel({
               x
             </button>
           </div>
-          <h2 className="mt-2 break-words font-mono text-sm text-slate-200">
+          <h2 className="mt-2 wrap-break-word font-mono text-sm text-slate-200">
             {districtDetails.name}
           </h2>
           <p className="mt-1 text-xs text-slate-400">Neighborhood: {districtDetails.neighborhood}</p>
@@ -117,9 +117,9 @@ export default function SidePanel({
       : "text-green-400";
 
   return (
-    <div className="fixed right-0 top-[64px] z-50 h-[calc(100%-64px)] w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
+    <div className="h-full w-full overflow-y-auto bg-slate-950/95">
       {/* Header */}
-      <div className="sticky top-0 border-b border-slate-700/60 bg-slate-950/95 p-5">
+      <div className="sticky top-0 z-10 border-b border-slate-700/60 bg-slate-950/95 p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
@@ -137,7 +137,7 @@ export default function SidePanel({
             x
           </button>
         </div>
-        <h2 className="mt-2 break-words font-mono text-sm text-slate-200">
+        <h2 className="mt-2 wrap-break-word font-mono text-sm text-slate-200">
           {building.path}
         </h2>
       </div>

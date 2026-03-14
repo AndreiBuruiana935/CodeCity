@@ -60,13 +60,40 @@ export default function QuestionBar({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/question", {
+      // Build a compact code map from the city data so the Guide has repo context
+      const codeMap = city.city.districts
+        .flatMap((d) =>
+          d.buildings.map((b) => {
+            const fns = b.functions.map((f) => `${f.name}(${f.params.join(",")})`).join("; ");
+            return `[${b.path}] LOC:${b.linesOfCode} risk:${b.riskScore} complexity:${b.complexity} deps:${b.dependencyCount}${fns ? ` fns:{${fns}}` : ""}${b.aiSummary ? ` — ${b.aiSummary}` : ""}`;
+          })
+        )
+        .join("\n");
+
+      const fullContext = [
+        onboarding?.plainEnglish || "",
+        "",
+        "=== FILE MAP ===",
+        codeMap,
+      ].join("\n");
+
+      const res = await fetch("http://localhost:3001/api/chat-guide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: userMessage.text, city, onboarding }),
+        body: JSON.stringify({
+          userQuery: userMessage.text,
+          projectSummary: fullContext,
+        }),
       });
 
-      const data: QuestionResponse = await res.json();
+      const raw = await res.json();
+      const data: QuestionResponse = {
+        answer: raw.answer || raw.error || "No response from guide.",
+        highlightedBuildings: [],
+        cameraFlyTo: null,
+        relatedDistricts: [],
+        confidence: raw.success ? 0.8 : 0.2,
+      };
       setMessages((prev) => [
         ...prev,
         {
@@ -103,7 +130,7 @@ export default function QuestionBar({
   }
 
   return (
-    <aside className="fixed bottom-6 left-6 top-20 z-30 w-[420px] max-w-[calc(100vw-3rem)] rounded-2xl border border-cyan-300/20 bg-slate-950/80 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+    <aside className="fixed bottom-6 left-6 top-20 z-30 w-105 max-w-[calc(100vw-3rem)] rounded-2xl border border-cyan-300/20 bg-slate-950/80 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
       <div className="flex h-full flex-col">
         <div className="flex items-start justify-between border-b border-slate-700/50 px-4 py-3">
           <div>
@@ -162,7 +189,7 @@ export default function QuestionBar({
             <button
               type="submit"
               disabled={loading}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:brightness-110 disabled:opacity-50"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-linear-to-r from-cyan-400 to-blue-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:brightness-110 disabled:opacity-50"
             >
               {loading ? "..." : "Send"}
             </button>

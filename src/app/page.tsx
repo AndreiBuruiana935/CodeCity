@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { CitySchema, Building, OnboardingSummary, QuestionResponse, DistrictDetails } from "@/types/city";
 import { signIn, signOut, useSession } from "next-auth/react";
 import SidePanel from "@/components/SidePanel";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
 import QuestionBar from "@/components/QuestionBar";
 import TourOverlay from "@/components/TourOverlay";
-import Legend from "@/components/Legend";
-
-const CityRenderer = lazy(() => import("@/components/CityRenderer"));
+import FileTree from "@/components/FileTree";
+import RepoGraph from "@/components/RepoGraph";
 
 type AppState = "landing" | "projects" | "loading" | "city";
 
@@ -97,6 +96,7 @@ export default function Home() {
   const [highlightedBuildings, setHighlightedBuildings] = useState<string[]>([]);
   const [cameraTarget, setCameraTarget] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [tourActive, setTourActive] = useState(false);
   const [tourStep, setTourStep] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
@@ -523,12 +523,12 @@ export default function Home() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(80,200,255,0.22),transparent_40%),radial-gradient(circle_at_80%_10%,rgba(73,134,255,0.25),transparent_42%),radial-gradient(circle_at_52%_82%,rgba(78,255,177,0.16),transparent_45%)]" />
         <div className="pointer-events-none absolute -left-28 top-14 h-72 w-72 rounded-full bg-cyan-500/20 blur-3xl animate-float-orb" />
         <div className="pointer-events-none absolute -right-24 top-28 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl animate-float-orb-delayed" />
-        <div className="pointer-events-none absolute bottom-[-120px] left-1/2 h-80 w-[42rem] -translate-x-1/2 rounded-full bg-emerald-400/10 blur-3xl animate-float-orb" />
+        <div className="pointer-events-none absolute -bottom-30 left-1/2 h-80 w-2xl -translate-x-1/2 rounded-full bg-emerald-400/10 blur-3xl animate-float-orb" />
         <div className="landing-grid-overlay pointer-events-none absolute inset-0 opacity-60" />
 
         <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 pb-10 pt-8 md:px-10 lg:px-14">
           <div className="animate-rise-in flex items-center justify-between">
-            <div className="animate-fluid-gradient bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
+            <div className="animate-fluid-gradient bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
               Code City
             </div>
             <div className="flex items-center gap-3">
@@ -559,7 +559,7 @@ export default function Home() {
               </p>
               <h1 className="max-w-3xl text-5xl font-bold leading-[1.02] tracking-tight text-white sm:text-6xl lg:text-7xl">
                 Turn any repo into a
-                <span className="animate-fluid-gradient bg-gradient-to-r from-cyan-300 via-blue-300 to-emerald-300 bg-clip-text text-transparent">
+                <span className="animate-fluid-gradient bg-linear-to-r from-cyan-300 via-blue-300 to-emerald-300 bg-clip-text text-transparent">
                   {" "}
                   living code city
                 </span>
@@ -634,7 +634,7 @@ export default function Home() {
                     e.preventDefault();
                     handleAnalyze();
                   }}
-                  className="flex min-h-[355px] flex-col space-y-4"
+                  className="flex min-h-88.75 flex-col space-y-4"
                 >
                   {entryMode === "guest" && (
                     <>
@@ -759,7 +759,7 @@ export default function Home() {
                   {entryMode === "guest" && (
                     <button
                       type="submit"
-                      className="group relative inline-flex w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                      className="group relative inline-flex w-full items-center justify-center overflow-hidden rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
                     >
                       <span className="absolute inset-0 -translate-x-full bg-white/30 transition-transform duration-700 group-hover:translate-x-full" />
                       <span className="relative">Analyze Repository</span>
@@ -810,7 +810,7 @@ export default function Home() {
         <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col px-6 py-8 md:px-10 lg:px-14">
             <div className="mb-5 flex items-center justify-between">
             <div>
-              <h1 className="bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-bold text-transparent">
+              <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-bold text-transparent">
                 Projects Workspace
               </h1>
               <p className="mt-1 text-sm text-slate-300">
@@ -864,7 +864,7 @@ export default function Home() {
                         void handleAnalyze(repoUrl);
                       }}
                       disabled={!repoUrl.trim()}
-                      className="rounded-lg bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg bg-linear-to-r from-cyan-400 via-blue-500 to-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Analyze Now
                     </button>
@@ -1014,7 +1014,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => openCityFromRepo(selectedProjectUrl)}
-                      className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                      className="inline-flex items-center justify-center rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110"
                     >
                       Analyze This Repository
                     </button>
@@ -1173,33 +1173,12 @@ export default function Home() {
 
   // City view
   return (
-    <div className="h-screen w-screen relative">
-      {/* 3D Canvas */}
-      {city && (
-        <Suspense
-          fallback={
-            <div className="h-screen flex items-center justify-center bg-[#0a0a1a]">
-              <p className="text-gray-400">Loading 3D renderer...</p>
-            </div>
-          }
-        >
-          <CityRenderer
-            city={city}
-            highlightedBuildings={highlightedBuildings}
-            cameraTarget={cameraTarget}
-            detailSelectionTarget={selectedBuilding?.id || null}
-            selectedDistrictId={selectedDistrictId}
-            onDistrictClick={handleDistrictClick}
-            onBuildingClick={handleBuildingClick}
-          />
-        </Suspense>
-      )}
-
+    <div className="flex h-screen w-screen flex-col bg-[#070d17] text-slate-100">
       {/* Top bar */}
-      <div className="fixed left-0 right-0 top-0 z-20 border-b border-cyan-300/15 bg-slate-950/75 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-6 py-3.5">
+      <div className="z-20 shrink-0 border-b border-cyan-300/15 bg-slate-950/90 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-5 py-2.5">
           <div className="flex items-center gap-4">
-            <h1 className="bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-xl font-bold text-transparent">
+            <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-lg font-bold text-transparent">
               Code City
             </h1>
             <span className="font-mono text-sm text-slate-300">
@@ -1210,7 +1189,7 @@ export default function Home() {
               {city?.city.architecture}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 setState("landing");
@@ -1220,27 +1199,28 @@ export default function Home() {
                 setSelectedDistrictId(null);
                 setHighlightedBuildings([]);
                 setCameraTarget(null);
+                setSearchQuery("");
               }}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               New
             </button>
             <button
               onClick={handleTourStart}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               Tour
             </button>
             <button
               onClick={() => setShowOnboarding(true)}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               Guide
             </button>
             {status === "authenticated" && (
               <button
                 onClick={() => signOut()}
-                className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+                className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
               >
                 Sign out
               </button>
@@ -1249,190 +1229,63 @@ export default function Home() {
         </div>
       </div>
 
-      <div
-        className={`fixed top-20 z-20 space-y-3 transition-all duration-300 ${
-          selectedBuilding ? "right-[436px]" : "right-6"
-        }`}
-      >
-        {!selectedBuilding && (
-          <div className="w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-            <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
-              Walking Mode
-            </div>
-            <div className="mt-2 space-y-1 text-xs text-slate-300">
-              <div>Move: W A S D</div>
-              <div>Vertical: Q / E</div>
-              <div>Sprint: Hold Shift (ramps up)</div>
-            </div>
+      {/* Main 3-panel layout */}
+      <div className="flex min-h-0 flex-1">
+        {/* Left: File Tree */}
+        {city && (
+          <div className="w-64 shrink-0 overflow-hidden">
+            <FileTree
+              city={city}
+              selectedBuildingId={selectedBuilding?.id || null}
+              highlightedBuildings={highlightedBuildings}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onBuildingClick={handleBuildingClick}
+              onDistrictClick={handleDistrictClick}
+            />
           </div>
         )}
 
-        {!selectedBuilding && <Legend className="w-64" />}
-      </div>
-
-      {/* Side panel */}
-      <SidePanel
-        building={selectedBuilding}
-        districtDetails={selectedDistrictDetails}
-        onViewCode={(building) => {
-          if (!city?.city.name?.includes("/")) return;
-          const [owner, repo] = city.city.name.split("/");
-          const encodedPath = building.path
-            .split("/")
-            .map((part) => encodeURIComponent(part))
-            .join("/");
-          const url = `https://github.com/${owner}/${repo}/blob/main/${encodedPath}`;
-          window.open(url, "_blank", "noopener,noreferrer");
-        }}
-        onClose={() => {
-          setSelectedBuilding(null);
-          setSelectedDistrictId(null);
-          setCameraTarget(null);
-          setHighlightedBuildings([]);
-        }}
-      />
-
-      {showCitySelector && status === "authenticated" && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[min(920px,92vw)] rounded-2xl border border-slate-600/60 bg-slate-950/95 p-5 shadow-[0_28px_70px_rgba(0,0,0,0.6)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Select the City</h3>
-                <p className="text-xs text-slate-400">Switch projects from history or your GitHub repos.</p>
-              </div>
-              <button
-                onClick={() => setShowCitySelector(false)}
-                className="rounded-md border border-slate-500/40 px-2 py-1 text-xs text-slate-300 transition hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-              <input
-                type="text"
-                value={repoSearch}
-                onChange={(e) => setRepoSearch(e.target.value)}
-                placeholder="Search history and repos"
-                className="w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  setRepoLoading(true);
-                  setRepoError(null);
-                  try {
-                    const res = await fetch("/api/github/repos", { method: "GET" });
-                    const data = await res.json();
-                    if (!res.ok) {
-                      throw new Error(data.error || "Failed to reload repositories");
-                    }
-                    setRepos((data.repos || []) as UserRepo[]);
-                  } catch (err) {
-                    setRepoError(
-                      err instanceof Error ? err.message : "Failed to reload repositories"
-                    );
-                  } finally {
-                    setRepoLoading(false);
-                  }
-                }}
-                className="rounded-lg border border-slate-500/45 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-              >
-                Refresh Repos
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
-                <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-slate-300 uppercase">History</p>
-                <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-                  {filteredHistory.length === 0 && (
-                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-                      No city history yet.
-                    </div>
-                  )}
-
-                  {filteredHistory.map((item) => (
-                    <div
-                      key={`${item.repoUrl}-${item.timestamp}`}
-                      className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openCityFromRepo(item.repoUrl)}
-                          className="min-w-0 text-left"
-                        >
-                          <p className="truncate text-xs font-semibold text-slate-100">{item.label}</p>
-                          <p className="text-[11px] text-slate-400">
-                            {new Date(item.timestamp).toLocaleString()}
-                          </p>
-                        </button>
-                        <a
-                          href={item.repoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-                        >
-                          Open
-                        </a>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
-                <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-slate-300 uppercase">My Repositories</p>
-                <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-                  {repoLoading && (
-                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
-                      Loading repositories...
-                    </div>
-                  )}
-
-                  {!repoLoading && filteredRepos.length === 0 && (
-                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-                      No repositories found.
-                    </div>
-                  )}
-
-                  {!repoLoading &&
-                    filteredRepos.map((repo) => (
-                      <div
-                        key={`selector-${repo.id}`}
-                        className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openCityFromRepo(`https://github.com/${repo.fullName}`)}
-                            className="min-w-0 text-left"
-                          >
-                            <p className="truncate text-xs font-semibold text-slate-100">{repo.fullName}</p>
-                            <p className="text-[11px] text-slate-400">
-                              {repo.private ? "Private" : "Public"} · {repo.role}
-                            </p>
-                          </button>
-                          <a
-                            href={repo.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-                          >
-                            Open
-                          </a>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-
-            {repoError && <p className="mt-3 text-xs text-rose-300">{repoError}</p>}
-          </div>
+        {/* Center: 2D Graph */}
+        <div className="relative min-w-0 flex-1">
+          {city && (
+            <RepoGraph
+              city={city}
+              selectedBuildingId={selectedBuilding?.id || null}
+              highlightedBuildings={highlightedBuildings}
+              cameraTarget={cameraTarget}
+              onBuildingClick={handleBuildingClick}
+              onDistrictClick={handleDistrictClick}
+            />
+          )}
         </div>
-      )}
+
+        {/* Right: Side Panel */}
+        {(selectedBuilding || selectedDistrictId) && (
+          <div className="w-[420px] shrink-0 overflow-y-auto border-l border-cyan-300/20 bg-slate-950/90">
+            <SidePanel
+              building={selectedBuilding}
+              districtDetails={selectedDistrictDetails}
+              onViewCode={(building) => {
+                if (!city?.city.name?.includes("/")) return;
+                const [owner, repo] = city.city.name.split("/");
+                const encodedPath = building.path
+                  .split("/")
+                  .map((part) => encodeURIComponent(part))
+                  .join("/");
+                const url = `https://github.com/${owner}/${repo}/blob/main/${encodedPath}`;
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              onClose={() => {
+                setSelectedBuilding(null);
+                setSelectedDistrictId(null);
+                setCameraTarget(null);
+                setHighlightedBuildings([]);
+              }}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Question bar */}
       {city && (

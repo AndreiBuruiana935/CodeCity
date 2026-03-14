@@ -45,7 +45,7 @@ function throttleMiddleware(req, res, next) {
   next();
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // 1. Basic Health Check
 app.get('/', (req, res) => {
@@ -55,7 +55,7 @@ app.get('/', (req, res) => {
 // 2. Tri-Agent AI System Routes
 
 // ── AGENT 1: CARTOGRAPHER ──────────────────────────────────────
-app.post('/api/map-repository', async (req, res) => {
+app.post('/api/map-repository', throttleMiddleware, async (req, res) => {
   const { repoTree, packageJson = {} } = req.body;
 
   if (!repoTree) {
@@ -74,7 +74,7 @@ app.post('/api/map-repository', async (req, res) => {
 });
 
 // ── AGENT 2: INSPECTOR ─────────────────────────────────────────
-app.post('/api/inspect-file', async (req, res) => {
+app.post('/api/inspect-file', throttleMiddleware, async (req, res) => {
   const {
     fileCode,
     inboundDeps  = [],
@@ -106,7 +106,7 @@ app.post('/api/inspect-file', async (req, res) => {
 // RESPONSE SHAPE NOTE: This route returns { success: true, answer: string }
 // where answer is plain prose text. It does NOT return districtMap or
 // inspection. Any frontend consumer must read the `answer` key specifically.
-app.post('/api/chat-guide', async (req, res) => {
+app.post('/api/chat-guide', throttleMiddleware, async (req, res) => {
   const { userQuery, projectSummary = '' } = req.body;
 
   if (!userQuery || typeof userQuery !== 'string' || !userQuery.trim()) {
