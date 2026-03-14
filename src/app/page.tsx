@@ -332,7 +332,7 @@ export default function Home() {
             depth: "full",
             includeTests: false,
             githubToken: githubToken || undefined,
-            enableAI: true,
+            enableAI: false,
           },
         }),
       });
@@ -1163,14 +1163,6 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            {status === "authenticated" && (
-              <button
-                onClick={() => setShowCitySelector(true)}
-                className="rounded-lg border border-cyan-300/45 bg-cyan-950/35 px-3 py-1.5 text-sm text-cyan-100 transition hover:border-cyan-200/75 hover:bg-cyan-900/40"
-              >
-                Select the City
-              </button>
-            )}
             <button
               onClick={() => setShowOnboarding(true)}
               className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
