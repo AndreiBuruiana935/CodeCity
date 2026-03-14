@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { parseRepoUrl } from "@/lib/github";
 import { generateCity } from "@/lib/city-generator";
 import {
@@ -10,6 +11,10 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
+    const token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET,
+    });
     const body = await req.json();
     const { repoUrl, options = {} } = body;
 
@@ -21,17 +26,19 @@ export async function POST(req: NextRequest) {
     }
 
     const { owner, repo } = parseRepoUrl(repoUrl);
+    const oauthToken = (token as { accessToken?: string } | null)?.accessToken;
+    const effectiveToken = options.githubToken || oauthToken;
     const { city, onboarding } = await generateCity(owner, repo, {
       depth: options.depth || "full",
       includeTests: options.includeTests ?? false,
-      githubToken: options.githubToken,
+      githubToken: effectiveToken,
     });
 
     // AI-powered summaries
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
     const aiEnabled =
       process.env.ENABLE_AI === "true" &&
-      !!process.env.ANTHROPIC_API_KEY &&
+      !!process.env.FEATHERLESS_API_KEY &&
       options.enableAI === true;
 
     if (aiEnabled) {
