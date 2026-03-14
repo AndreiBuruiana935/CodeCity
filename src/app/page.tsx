@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, Suspense, lazy } from "react";
+import { useState, useCallback, Suspense, lazy, useRef, useEffect } from "react";
 import { CitySchema, Building, OnboardingSummary, QuestionResponse } from "@/types/city";
 import SidePanel from "@/components/SidePanel";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
@@ -26,6 +26,26 @@ export default function Home() {
   const [tourStep, setTourStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState("");
+  const transientCameraTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (transientCameraTimeoutRef.current) {
+        clearTimeout(transientCameraTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const flyToTransientTarget = useCallback((buildingId: string) => {
+    if (transientCameraTimeoutRef.current) {
+      clearTimeout(transientCameraTimeoutRef.current);
+    }
+
+    setCameraTarget(buildingId);
+    transientCameraTimeoutRef.current = setTimeout(() => {
+      setCameraTarget((current) => (current === buildingId ? null : current));
+    }, 1800);
+  }, []);
 
   const handleAnalyze = useCallback(async () => {
     if (!repoUrl.trim()) return;
@@ -77,35 +97,35 @@ export default function Home() {
   }, []);
 
   const handleBuildingFocus = useCallback((buildingId: string) => {
-    setCameraTarget(buildingId);
+    flyToTransientTarget(buildingId);
     setHighlightedBuildings([buildingId]);
-  }, []);
+  }, [flyToTransientTarget]);
 
   const handleTourStart = useCallback(() => {
     setTourActive(true);
     setTourStep(0);
     if (onboarding?.guidedTour[0]) {
-      setCameraTarget(onboarding.guidedTour[0].buildingId);
+      flyToTransientTarget(onboarding.guidedTour[0].buildingId);
     }
-  }, [onboarding]);
+  }, [onboarding, flyToTransientTarget]);
 
   const handleTourNext = useCallback(() => {
     if (!onboarding) return;
     const next = tourStep + 1;
     if (next < onboarding.guidedTour.length) {
       setTourStep(next);
-      setCameraTarget(onboarding.guidedTour[next].buildingId);
+      flyToTransientTarget(onboarding.guidedTour[next].buildingId);
     }
-  }, [tourStep, onboarding]);
+  }, [tourStep, onboarding, flyToTransientTarget]);
 
   const handleTourPrev = useCallback(() => {
     if (!onboarding) return;
     const prev = tourStep - 1;
     if (prev >= 0) {
       setTourStep(prev);
-      setCameraTarget(onboarding.guidedTour[prev].buildingId);
+      flyToTransientTarget(onboarding.guidedTour[prev].buildingId);
     }
-  }, [tourStep, onboarding]);
+  }, [tourStep, onboarding, flyToTransientTarget]);
 
   // Landing page
   if (state === "landing") {
@@ -119,7 +139,7 @@ export default function Home() {
 
         <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 pb-10 pt-8 md:px-10 lg:px-14">
           <div className="animate-rise-in flex items-center justify-between">
-            <div className="bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
+            <div className="animate-fluid-gradient bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
               Code City
             </div>
             <a
@@ -139,7 +159,7 @@ export default function Home() {
               </p>
               <h1 className="max-w-3xl text-5xl font-bold leading-[1.02] tracking-tight text-white sm:text-6xl lg:text-7xl">
                 Turn any repo into a
-                <span className="bg-gradient-to-r from-cyan-300 via-blue-300 to-emerald-300 bg-clip-text text-transparent">
+                <span className="animate-fluid-gradient bg-gradient-to-r from-cyan-300 via-blue-300 to-emerald-300 bg-clip-text text-transparent">
                   {" "}
                   living code city
                 </span>

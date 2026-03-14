@@ -65,6 +65,23 @@ body {
   mask-image: radial-gradient(circle at center, black 20%, transparent 80%);
 }
 
+@keyframes fluid-gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-fluid-gradient {
+  background-size: 220% 220%;
+  animation: fluid-gradient-shift 8s ease-in-out infinite;
+}
+
 /* Slide-in animation for side panel */
 @keyframes slide-in {
   from {
