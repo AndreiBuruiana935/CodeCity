@@ -1,8 +1,17 @@
+# Dependencies
 node_modules/
-.next/
+frontend/node_modules/
+backend/node_modules/
+
+# Next.js
+frontend/.next/
+
+# Environment
 .env
 .env.local
 .env.production.local
+
+# Misc
 info.txt
 *.tsbuildinfo
 next-env.d.ts
