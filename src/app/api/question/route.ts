@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
     const aiEnabled =
-      process.env.ENABLE_AI === "true" && !!process.env.ANTHROPIC_API_KEY;
+      process.env.ENABLE_AI === "true" && !!process.env.FEATHERLESS_API_KEY;
 
     // Try AI-powered answer first only when explicitly enabled
     if (aiEnabled) {

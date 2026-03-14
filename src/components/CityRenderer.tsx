@@ -28,6 +28,157 @@ interface DistrictLayout {
   neighborhood: string;
 }
 
+function seededHash(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function WindowGrid({
+  width,
+  height,
+  depth,
+  buildingId,
+  bodyBottom,
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  buildingId: string;
+  bodyBottom: number;
+}) {
+  const windows = useMemo(() => {
+    const items: {
+      key: string;
+      position: [number, number, number];
+      rotation: [number, number, number];
+      lit: boolean;
+    }[] = [];
+
+    const windowSize = 0.08;
+    const step = 0.2;
+    const minY = bodyBottom + 0.22;
+    const maxY = bodyBottom + height - 0.2;
+    const baseSeed = seededHash(buildingId);
+
+    const xCount = Math.max(1, Math.floor((width - 0.2) / step));
+    const zCount = Math.max(1, Math.floor((depth - 0.2) / step));
+
+    let idx = 0;
+    for (let yi = 0; minY + yi * step <= maxY; yi++) {
+      const y = minY + yi * step;
+
+      for (let xi = 0; xi < xCount; xi++) {
+        const x = -((xCount - 1) * step) / 2 + xi * step;
+        const lit = seededRandom(baseSeed + idx * 17) > 0.42;
+        items.push({
+          key: `z-${yi}-${xi}`,
+          position: [x, y, depth / 2 + 0.011],
+          rotation: [0, 0, 0],
+          lit,
+        });
+        idx++;
+      }
+
+      for (let zi = 0; zi < zCount; zi++) {
+        const z = -((zCount - 1) * step) / 2 + zi * step;
+        const lit = seededRandom(baseSeed + idx * 23) > 0.42;
+        items.push({
+          key: `x-${yi}-${zi}`,
+          position: [width / 2 + 0.011, y, z],
+          rotation: [0, -Math.PI / 2, 0],
+          lit,
+        });
+        idx++;
+      }
+    }
+
+    return { items, windowSize };
+  }, [width, height, depth, buildingId, bodyBottom]);
+
+  return (
+    <>
+      {windows.items.map((windowItem) => (
+        <mesh
+          key={windowItem.key}
+          position={windowItem.position}
+          rotation={windowItem.rotation}
+        >
+          <planeGeometry args={[windows.windowSize, windows.windowSize]} />
+          <meshStandardMaterial
+            color={windowItem.lit ? "#88ccff" : "#112233"}
+            emissive={windowItem.lit ? "#88ccff" : "#112233"}
+            emissiveIntensity={windowItem.lit ? 0.4 : 0.05}
+            roughness={0.2}
+            metalness={0.05}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+function StreetLight({
+  position,
+  armDirection,
+}: {
+  position: [number, number, number];
+  armDirection: [number, number, number];
+}) {
+  const armAngle = Math.atan2(armDirection[2], armDirection[0]);
+  const lampOffset = 0.6;
+  const lampPos: [number, number, number] = [
+    position[0] + armDirection[0] * lampOffset,
+    position[1] + 2.2,
+    position[2] + armDirection[2] * lampOffset,
+  ];
+
+  return (
+    <group>
+      <mesh position={[position[0], position[1] + 1.1, position[2]]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.03, 0.04, 2.2, 6]} />
+        <meshStandardMaterial color="#2a2f3a" roughness={0.8} metalness={0.2} />
+      </mesh>
+
+      <mesh
+        position={[position[0] + armDirection[0] * 0.3, position[1] + 2.2, position[2] + armDirection[2] * 0.3]}
+        rotation={[0, -armAngle, 0]}
+        castShadow
+      >
+        <boxGeometry args={[0.6, 0.04, 0.04]} />
+        <meshStandardMaterial color="#353c49" roughness={0.75} metalness={0.15} />
+      </mesh>
+
+      <mesh position={lampPos} castShadow>
+        <sphereGeometry args={[0.1, 10, 10]} />
+        <meshStandardMaterial
+          color="#fffacc"
+          emissive="#fffacc"
+          emissiveIntensity={1.2}
+          roughness={0.25}
+          metalness={0.1}
+        />
+      </mesh>
+
+      <pointLight
+        position={lampPos}
+        color="#ffe8aa"
+        intensity={0.4}
+        distance={6}
+        decay={2}
+      />
+    </group>
+  );
+}
+
 // Single building mesh
 function BuildingMesh({
   building,
@@ -54,14 +205,29 @@ function BuildingMesh({
 
   const width = Math.max(0.3, Math.min(building.linesOfCode / 200, 1.2));
   const height = Math.max(0.7, Math.min(building.height / 8, 14));
+  const bodyBottom = 0.15;
+  const baseHeight = 0.15;
+  const roofColor = useMemo(
+    () => `#${new THREE.Color(building.color).multiplyScalar(1.18).getHexString()}`,
+    [building.color]
+  );
+  const plinthColor = useMemo(
+    () => `#${new THREE.Color(building.color).multiplyScalar(0.42).getHexString()}`,
+    [building.color]
+  );
   const roofLabel = building.filename.length > 24
     ? `${building.filename.slice(0, 21)}...`
     : building.filename;
 
   return (
     <group position={position}>
+      <mesh position={[0, baseHeight / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width + 0.3, baseHeight, width + 0.3]} />
+        <meshStandardMaterial color={plinthColor} roughness={0.9} metalness={0.12} />
+      </mesh>
+
       <mesh
-        position={[0, height / 2, 0]}
+        position={[0, bodyBottom + height / 2, 0]}
         onClick={(e: ThreeEvent<MouseEvent>) => {
           e.stopPropagation();
           onClick();
@@ -89,26 +255,19 @@ function BuildingMesh({
         />
       </mesh>
 
-      {!lowPerf && (
-        <>
-          <mesh position={[0, height + 0.05, 0]} castShadow>
-            <boxGeometry args={[width * 0.9, 0.08, width * 0.9]} />
-            <meshStandardMaterial color="#0c1325" metalness={0.05} roughness={0.82} />
-          </mesh>
+      <mesh position={[0, bodyBottom + height + 0.05, 0]} castShadow>
+        <boxGeometry args={[width, 0.1, width]} />
+        <meshStandardMaterial color={roofColor} roughness={0.72} metalness={0.08} />
+      </mesh>
 
-          <mesh position={[0, height * 0.55, width / 2 + 0.01]}>
-            <planeGeometry args={[width * 0.7, height * 0.62]} />
-            <meshStandardMaterial
-              color="#8fd5ff"
-              emissive="#66ccff"
-              emissiveIntensity={highlighted ? 0.28 : hovered ? 0.16 : 0.05}
-              transparent
-              opacity={0.15}
-              roughness={0.15}
-              metalness={0.05}
-            />
-          </mesh>
-        </>
+      {!lowPerf && (
+        <WindowGrid
+          width={width}
+          height={height}
+          depth={width}
+          buildingId={building.id}
+          bodyBottom={bodyBottom}
+        />
       )}
 
       {!lowPerf && hovered && (
@@ -135,7 +294,7 @@ function BuildingMesh({
       )}
 
       <Text
-        position={[0, height + 0.14, 0]}
+        position={[0, bodyBottom + height + 0.11, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         fontSize={Math.max(0.1, Math.min(width * 0.24, 0.2))}
         maxWidth={Math.max(width * 1.5, 0.7)}
@@ -165,34 +324,50 @@ function DistrictGround({
   selected: boolean;
   onClick: () => void;
 }) {
+  const padHeight = 0.04;
+  const padWidth = size[0] + 0.5;
+  const padDepth = size[1] + 0.5;
+  const borderColor = selected ? "#67d4ff" : "#334466";
+
   return (
     <group position={position}>
       <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[size[0] / 2, -0.01, size[1] / 2]}
+        position={[size[0] / 2, padHeight / 2 + 0.005, size[1] / 2]}
         receiveShadow
         onClick={(e: ThreeEvent<MouseEvent>) => {
           e.stopPropagation();
           onClick();
         }}
       >
-        <planeGeometry args={[size[0] + 0.5, size[1] + 0.5]} />
+        <boxGeometry args={[padWidth, padHeight, padDepth]} />
         <meshStandardMaterial
           color={selected ? "#13385f" : "#1a1a2e"}
           transparent
-          opacity={selected ? 0.68 : 0.4}
+          opacity={selected ? 0.74 : 0.55}
+          roughness={0.88}
+          metalness={0.06}
         />
       </mesh>
 
-      {selected && (
-        <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[size[0] / 2, 0.02, size[1] / 2]}>
-          <edgesGeometry args={[new THREE.PlaneGeometry(size[0] + 0.85, size[1] + 0.85)]} />
-          <lineBasicMaterial color="#67d4ff" />
-        </lineSegments>
-      )}
+      <mesh position={[size[0] / 2, padHeight / 2 + 0.006, size[1] / 2 - padDepth / 2]}>
+        <boxGeometry args={[padWidth, 0.04, 0.06]} />
+        <meshStandardMaterial color={borderColor} roughness={0.65} />
+      </mesh>
+      <mesh position={[size[0] / 2, padHeight / 2 + 0.006, size[1] / 2 + padDepth / 2]}>
+        <boxGeometry args={[padWidth, 0.04, 0.06]} />
+        <meshStandardMaterial color={borderColor} roughness={0.65} />
+      </mesh>
+      <mesh position={[size[0] / 2 - padWidth / 2, padHeight / 2 + 0.006, size[1] / 2]}>
+        <boxGeometry args={[0.06, 0.04, padDepth]} />
+        <meshStandardMaterial color={borderColor} roughness={0.65} />
+      </mesh>
+      <mesh position={[size[0] / 2 + padWidth / 2, padHeight / 2 + 0.006, size[1] / 2]}>
+        <boxGeometry args={[0.06, 0.04, padDepth]} />
+        <meshStandardMaterial color={borderColor} roughness={0.65} />
+      </mesh>
 
       <Text
-        position={[size[0] / 2, 0.01, -0.5]}
+        position={[size[0] / 2, 0.08, -0.5]}
         rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.25}
         color={selected ? "#8ee8ff" : "#6366f1"}
@@ -222,17 +397,48 @@ function RoadMesh({
   const dz = to[2] - from[2];
   const length = Math.max(Math.sqrt(dx * dx + dz * dz), 0.2);
   const angle = Math.atan2(dz, dx);
-  const width = THREE.MathUtils.clamp(0.07 + weight * 0.09, 0.08, 0.22);
+  const roadWidth = THREE.MathUtils.clamp(0.35 + weight * 0.18, 0.4, 1.2);
+
+  const laneGap = 0.08;
+  const laneWidth = Math.max(0.12, (roadWidth - laneGap) / 2);
+  const roadHeight = 0.02;
+
+  const dashPositions = useMemo(() => {
+    const positions: number[] = [];
+    const dashLength = 0.3;
+    const pattern = 0.6;
+    for (let x = -length / 2 + dashLength / 2; x <= length / 2 - dashLength / 2; x += pattern) {
+      positions.push(x);
+    }
+    return positions;
+  }, [length]);
 
   return (
-    <group position={[(from[0] + to[0]) / 2, 0, (from[2] + to[2]) / 2]} rotation={[0, angle, 0]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]} receiveShadow>
-        <planeGeometry args={[length, width]} />
-        <meshStandardMaterial color="#242b36" roughness={0.94} metalness={0.02} />
+    <group position={[(from[0] + to[0]) / 2, 0.01, (from[2] + to[2]) / 2]} rotation={[0, angle, 0]}>
+      <mesh position={[0, roadHeight / 2, laneGap / 2 + laneWidth / 2]} castShadow receiveShadow>
+        <boxGeometry args={[length, roadHeight, laneWidth]} />
+        <meshStandardMaterial color="#1a1f2e" roughness={0.9} metalness={0.04} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.009, 0]}>
-        <planeGeometry args={[length * 0.94, 0.018]} />
-        <meshBasicMaterial color="#b5c2d6" transparent opacity={0.3} />
+
+      <mesh position={[0, roadHeight / 2, -(laneGap / 2 + laneWidth / 2)]} castShadow receiveShadow>
+        <boxGeometry args={[length, roadHeight, laneWidth]} />
+        <meshStandardMaterial color="#1a1f2e" roughness={0.9} metalness={0.04} />
+      </mesh>
+
+      {dashPositions.map((x) => (
+        <mesh key={`dash-${x}`} position={[x, roadHeight + 0.006, 0]} castShadow>
+          <boxGeometry args={[0.3, 0.01, 0.05]} />
+          <meshStandardMaterial color="#f6ce4f" roughness={0.55} metalness={0.08} />
+        </mesh>
+      ))}
+
+      <mesh position={[0, roadHeight + 0.004, roadWidth / 2 - 0.03]} castShadow>
+        <boxGeometry args={[length, 0.008, 0.03]} />
+        <meshStandardMaterial color="#e5eefb" roughness={0.35} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, roadHeight + 0.004, -(roadWidth / 2 - 0.03)]} castShadow>
+        <boxGeometry args={[length, 0.008, 0.03]} />
+        <meshStandardMaterial color="#e5eefb" roughness={0.35} metalness={0.08} />
       </mesh>
     </group>
   );
@@ -310,7 +516,7 @@ function CameraController({
     if (!initializedRef.current) {
       const [cx, _, cz] = cityCenter;
       const dist = THREE.MathUtils.clamp(citySpan * 0.9, 20, 90);
-      camera.position.set(cx + dist * 0.55, Math.max(14, dist * 0.6), cz + dist * 0.55);
+      camera.position.set(cx + dist * 0.55, Math.max(18, dist * 0.65), cz + dist * 0.55);
       controlsRef.current.target.set(cx, 1, cz);
       controlsRef.current.update();
       initializedRef.current = true;
@@ -387,7 +593,7 @@ function CameraController({
       ref={controlsRef as React.Ref<never>}
       makeDefault
       minDistance={2}
-      maxDistance={100}
+      maxDistance={85}
       enablePan
       maxPolarAngle={Math.PI / 2.2}
       enableDamping
@@ -507,6 +713,45 @@ function CityScene({
   const districtLayouts = layoutData.districtLayouts;
   const neighborhoodLabels = layoutData.neighborhoodLabels;
 
+  const streetLightData = useMemo(() => {
+    if (lowPerfMode || districtLayouts.length >= 60) return [] as {
+      key: string;
+      position: [number, number, number];
+      armDirection: [number, number, number];
+    }[];
+
+    const lights: {
+      key: string;
+      position: [number, number, number];
+      armDirection: [number, number, number];
+    }[] = [];
+
+    districtLayouts.forEach((layout) => {
+      const corners: [number, number, number][] = [
+        [layout.position[0] - 0.3, 0, layout.position[2] - 0.3],
+        [layout.position[0] + layout.size[0] + 0.3, 0, layout.position[2] - 0.3],
+        [layout.position[0] - 0.3, 0, layout.position[2] + layout.size[1] + 0.3],
+        [layout.position[0] + layout.size[0] + 0.3, 0, layout.position[2] + layout.size[1] + 0.3],
+      ];
+
+      const centerX = layout.position[0] + layout.size[0] / 2;
+      const centerZ = layout.position[2] + layout.size[1] / 2;
+
+      corners.forEach((corner, idx) => {
+        const dirX = corner[0] - centerX;
+        const dirZ = corner[2] - centerZ;
+        const len = Math.max(Math.hypot(dirX, dirZ), 1e-6);
+        lights.push({
+          key: `${layout.district.id}-${idx}`,
+          position: corner,
+          armDirection: [dirX / len, 0, dirZ / len],
+        });
+      });
+    });
+
+    return lights;
+  }, [districtLayouts, lowPerfMode]);
+
   const buildingPositions = useMemo(() => {
     const positions = new Map<string, [number, number, number]>();
     const spacing = 1.8;
@@ -594,14 +839,19 @@ function CityScene({
   return (
     <>
       <color attach="background" args={["#090e18"]} />
-      <ambientLight intensity={0.2} />
-      <hemisphereLight intensity={0.22} color="#6f87a7" groundColor="#121a27" />
+      <ambientLight intensity={0.15} />
+      <hemisphereLight intensity={0.22} color="#6f87a7" groundColor="#0d1018" />
       <directionalLight
         position={[22, 34, 16]}
         intensity={0.85}
       />
+      <directionalLight
+        position={[-18, 20, -12]}
+        intensity={0.25}
+        color="#3a4a6a"
+      />
       <pointLight position={[-12, 14, -8]} intensity={0.2} color="#4f7db5" />
-      <fog attach="fog" args={["#0b1320", 52, 150]} />
+      <fogExp2 attach="fog" args={["#080d18", 0.012]} />
 
       <CameraController
         target={cameraTarget}
@@ -615,9 +865,18 @@ function CityScene({
       {/* Ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
         <planeGeometry args={[sceneBounds.groundSize, sceneBounds.groundSize]} />
-        <meshStandardMaterial color="#0f1722" roughness={0.95} metalness={0.03} />
+        <meshStandardMaterial color="#0d1520" roughness={0.95} metalness={0.03} />
       </mesh>
       <gridHelper args={[sceneBounds.groundSize, 90, "#263247", "#182333"]} />
+      <gridHelper
+        args={[
+          sceneBounds.groundSize,
+          Math.max(8, Math.floor(sceneBounds.groundSize / 18)),
+          "#1e2a3a",
+          "#1e2a3a",
+        ]}
+        position={[0, 0.005, 0]}
+      />
 
       {/* Districts */}
       {districtLayouts.map((dl) => (
@@ -645,6 +904,14 @@ function CityScene({
         >
           {neighborhood.name}
         </Text>
+      ))}
+
+      {streetLightData.map((light) => (
+        <StreetLight
+          key={light.key}
+          position={light.position}
+          armDirection={light.armDirection}
+        />
       ))}
 
       {/* Buildings */}

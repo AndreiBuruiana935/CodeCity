@@ -2,6 +2,7 @@
 
 import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from "react";
 import { CitySchema, Building, OnboardingSummary, QuestionResponse, DistrictDetails } from "@/types/city";
+import { signIn, signOut, useSession } from "next-auth/react";
 import SidePanel from "@/components/SidePanel";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
 import QuestionBar from "@/components/QuestionBar";
@@ -12,10 +13,26 @@ const CityRenderer = lazy(() => import("@/components/CityRenderer"));
 
 type AppState = "landing" | "loading" | "city";
 
+interface UserRepo {
+  id: number;
+  fullName: string;
+  owner: string;
+  name: string;
+  url: string;
+  private: boolean;
+  role: "admin" | "write" | "read";
+  updatedAt: string;
+}
+
 export default function Home() {
+  const { data: session, status } = useSession();
   const [state, setState] = useState<AppState>("landing");
   const [repoUrl, setRepoUrl] = useState("");
   const [githubToken, setGithubToken] = useState("");
+  const [repoSearch, setRepoSearch] = useState("");
+  const [repos, setRepos] = useState<UserRepo[]>([]);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [repoError, setRepoError] = useState<string | null>(null);
   const [city, setCity] = useState<CitySchema | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingSummary | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -36,6 +53,59 @@ export default function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      setRepos([]);
+      setRepoError(null);
+      setRepoSearch("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadRepos() {
+      setRepoLoading(true);
+      setRepoError(null);
+
+      try {
+        const res = await fetch("/api/github/repos", { method: "GET" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load repositories");
+        }
+
+        if (!cancelled) {
+          setRepos((data.repos || []) as UserRepo[]);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRepoError(err instanceof Error ? err.message : "Failed to load repositories");
+        }
+      } finally {
+        if (!cancelled) {
+          setRepoLoading(false);
+        }
+      }
+    }
+
+    loadRepos();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
+
+  const filteredRepos = useMemo(() => {
+    const term = repoSearch.trim().toLowerCase();
+    if (!term) return repos.slice(0, 40);
+    return repos
+      .filter((repo) =>
+        `${repo.fullName} ${repo.owner} ${repo.name}`.toLowerCase().includes(term)
+      )
+      .slice(0, 40);
+  }, [repoSearch, repos]);
 
   const flyToTransientTarget = useCallback((buildingId: string) => {
     if (transientCameraTimeoutRef.current) {
@@ -64,6 +134,7 @@ export default function Home() {
             depth: "full",
             includeTests: false,
             githubToken: githubToken || undefined,
+            enableAI: true,
           },
         }),
       });
@@ -188,14 +259,28 @@ export default function Home() {
             <div className="animate-fluid-gradient bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
               Code City
             </div>
-            <a
-              href="https://github.com/settings/tokens/new?scopes=repo&description=CodeCity"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-slate-300 transition hover:text-cyan-100"
-            >
-              Need token? Create one
-            </a>
+            {status === "authenticated" ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-300">
+                  Signed in as {session?.user?.name || session?.user?.email || "GitHub user"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => signOut()}
+                  className="rounded-lg border border-slate-500/40 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => signIn("github")}
+                className="rounded-lg border border-cyan-300/40 bg-slate-900/70 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-slate-900"
+              >
+                Sign in with GitHub
+              </button>
+            )}
           </div>
 
           <div className="mt-8 grid flex-1 items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
@@ -260,9 +345,122 @@ export default function Home() {
                     />
                   </div>
 
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
+                        Your GitHub Repositories
+                      </p>
+                      {status === "authenticated" && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setRepoLoading(true);
+                            setRepoError(null);
+                            try {
+                              const res = await fetch("/api/github/repos", { method: "GET" });
+                              const data = await res.json();
+                              if (!res.ok) {
+                                throw new Error(data.error || "Failed to reload repositories");
+                              }
+                              setRepos((data.repos || []) as UserRepo[]);
+                            } catch (err) {
+                              setRepoError(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Failed to reload repositories"
+                              );
+                            } finally {
+                              setRepoLoading(false);
+                            }
+                          }}
+                          className="rounded-md border border-slate-500/35 bg-slate-900/70 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                        >
+                          Refresh
+                        </button>
+                      )}
+                    </div>
+
+                    {status !== "authenticated" ? (
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 p-3 text-xs text-slate-300">
+                        Sign in with GitHub to browse repos you own or collaborate on.
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={repoSearch}
+                          onChange={(e) => setRepoSearch(e.target.value)}
+                          placeholder="Search repos"
+                          className="mb-2 w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                        />
+
+                        <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                          {repoLoading && (
+                            <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
+                              Loading repositories...
+                            </div>
+                          )}
+
+                          {!repoLoading && filteredRepos.length === 0 && (
+                            <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
+                              No repositories found for this search.
+                            </div>
+                          )}
+
+                          {!repoLoading &&
+                            filteredRepos.map((repo) => {
+                              const selected =
+                                repoUrl.trim().toLowerCase() ===
+                                `https://github.com/${repo.fullName}`.toLowerCase();
+
+                              return (
+                                <div
+                                  key={repo.id}
+                                  className={`rounded-lg border px-2.5 py-2 transition ${
+                                    selected
+                                      ? "border-cyan-300/55 bg-cyan-900/15"
+                                      : "border-slate-700/60 bg-slate-950/60"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRepoUrl(`https://github.com/${repo.fullName}`)
+                                      }
+                                      className="min-w-0 text-left"
+                                    >
+                                      <p className="truncate text-xs font-semibold text-slate-100">
+                                        {repo.fullName}
+                                      </p>
+                                      <p className="text-[11px] text-slate-400">
+                                        {repo.private ? "Private" : "Public"} · {repo.role}
+                                      </p>
+                                    </button>
+                                    <a
+                                      href={repo.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                                    >
+                                      Open
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        {repoError && (
+                          <p className="mt-2 text-xs text-rose-300">{repoError}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+
                   <div>
                     <label className="mb-2 block text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
-                      GitHub Token (optional)
+                      GitHub Token (optional override)
                     </label>
                     <input
                       type="password"

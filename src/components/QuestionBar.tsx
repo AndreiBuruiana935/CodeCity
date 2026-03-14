@@ -22,7 +22,7 @@ export default function QuestionBar({
 }: QuestionBarProps) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [minimized, setMinimized] = useState(false);
+  const [minimized, setMinimized] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -95,7 +95,7 @@ export default function QuestionBar({
     return (
       <button
         onClick={() => setMinimized(false)}
-        className="fixed bottom-6 left-6 z-30 rounded-xl border border-cyan-300/30 bg-slate-950/85 px-4 py-2 text-sm font-semibold text-cyan-100 shadow-[0_16px_34px_rgba(0,0,0,0.4)] backdrop-blur-xl transition hover:border-cyan-200/60"
+        className="fixed bottom-6 left-6 z-30 rounded-xl border border-cyan-300/35 bg-slate-950/90 px-5 py-3 text-base font-semibold text-cyan-100 shadow-[0_18px_38px_rgba(0,0,0,0.45)] backdrop-blur-xl transition hover:border-cyan-200/70"
       >
         Open Chat
       </button>
