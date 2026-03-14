@@ -39,7 +39,7 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
       : "text-green-400";
 
   return (
-    <div className="fixed right-0 top-0 z-50 h-full w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
+    <div className="fixed right-0 top-[64px] z-50 h-[calc(100%-64px)] w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
       {/* Header */}
       <div className="sticky top-0 border-b border-slate-700/60 bg-slate-950/95 p-5">
         <div className="flex items-center justify-between">

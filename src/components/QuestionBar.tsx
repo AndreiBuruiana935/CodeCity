@@ -22,6 +22,7 @@ export default function QuestionBar({
 }: QuestionBarProps) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -31,6 +32,12 @@ export default function QuestionBar({
   ]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!minimized) {
+      window.setTimeout(() => inputRef.current?.focus(), 60);
+    }
+  }, [minimized]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -84,16 +91,36 @@ export default function QuestionBar({
     }
   };
 
+  if (minimized) {
+    return (
+      <button
+        onClick={() => setMinimized(false)}
+        className="fixed bottom-6 left-6 z-30 rounded-xl border border-cyan-300/30 bg-slate-950/85 px-4 py-2 text-sm font-semibold text-cyan-100 shadow-[0_16px_34px_rgba(0,0,0,0.4)] backdrop-blur-xl transition hover:border-cyan-200/60"
+      >
+        Open Chat
+      </button>
+    );
+  }
+
   return (
-    <aside className="fixed left-6 top-20 bottom-6 z-30 w-[360px] max-w-[calc(100vw-3rem)] rounded-2xl border border-cyan-300/20 bg-slate-950/80 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+    <aside className="fixed bottom-6 left-6 top-20 z-30 w-[420px] max-w-[calc(100vw-3rem)] rounded-2xl border border-cyan-300/20 bg-slate-950/80 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
       <div className="flex h-full flex-col">
-        <div className="border-b border-slate-700/50 px-4 py-3">
-          <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
-            Code City Assistant
+        <div className="flex items-start justify-between border-b border-slate-700/50 px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+              Code City Assistant
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {city.city.name}
+            </div>
           </div>
-          <div className="mt-1 text-xs text-slate-400">
-            {city.city.name}
-          </div>
+          <button
+            onClick={() => setMinimized(true)}
+            className="rounded-md border border-slate-600/50 px-2 py-1 text-sm font-semibold leading-none text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+            aria-label="Minimize chat"
+          >
+            ↓
+          </button>
         </div>
 
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">

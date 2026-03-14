@@ -201,11 +201,13 @@ function RoadMesh({
 function CameraController({
   target,
   buildingPositions,
+  buildingHeights,
   cityCenter,
   citySpan,
 }: {
   target: string | null;
   buildingPositions: Map<string, [number, number, number]>;
+  buildingHeights: Map<string, number>;
   cityCenter: [number, number, number];
   citySpan: number;
 }) {
@@ -223,6 +225,7 @@ function CameraController({
     shift: false,
   });
   const initializedRef = useRef(false);
+  const sprintFactorRef = useRef(1);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -272,9 +275,11 @@ function CameraController({
 
     if (target && buildingPositions.has(target)) {
       const pos = buildingPositions.get(target)!;
-      const targetVec = new THREE.Vector3(pos[0], 1.6, pos[2]);
+      const height = buildingHeights.get(target) ?? 2;
+      const targetVec = new THREE.Vector3(pos[0], Math.max(1.2, height * 0.45), pos[2]);
+      const distance = THREE.MathUtils.clamp(3.8 + height * 0.65, 4.8, 14.5);
       camera.position.lerp(
-        new THREE.Vector3(pos[0] + 4.2, Math.max(4.6, pos[1] + 6.3), pos[2] + 4.2),
+        new THREE.Vector3(pos[0] + distance, Math.max(height * 1.15, 5.4), pos[2] + distance),
         Math.min(delta * 2.8, 0.12)
       );
       controlsRef.current.target.lerp(targetVec, Math.min(delta * 2.8, 0.12));
@@ -282,7 +287,14 @@ function CameraController({
       return;
     }
 
-    const baseSpeed = keyState.current.shift ? 14 : 8;
+    const sprintTarget = keyState.current.shift ? 6 : 1;
+    sprintFactorRef.current = THREE.MathUtils.lerp(
+      sprintFactorRef.current,
+      sprintTarget,
+      Math.min(delta * 2.2, 0.2)
+    );
+
+    const baseSpeed = 8 * sprintFactorRef.current;
     const step = baseSpeed * delta;
     const forward = new THREE.Vector3()
       .subVectors(controlsRef.current.target, camera.position)
@@ -441,6 +453,17 @@ function CityScene({
     };
   }, [districtLayouts]);
 
+  const buildingHeights = useMemo(() => {
+    const heights = new Map<string, number>();
+    for (const district of city.city.districts) {
+      for (const building of district.buildings) {
+        const renderedHeight = Math.max(0.7, Math.min(building.height / 8, 14));
+        heights.set(building.id, renderedHeight);
+      }
+    }
+    return heights;
+  }, [city]);
+
   const roadData = useMemo(() => {
     return city.city.roads
       .slice(0, lowPerfMode ? 60 : 120)
@@ -477,6 +500,7 @@ function CityScene({
       <CameraController
         target={cameraTarget}
         buildingPositions={buildingPositions}
+        buildingHeights={buildingHeights}
         cityCenter={sceneBounds.center}
         citySpan={sceneBounds.span}
       />

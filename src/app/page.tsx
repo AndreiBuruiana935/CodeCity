@@ -345,15 +345,25 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="fixed bottom-6 right-6 z-20 w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-        <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
-          {cameraTarget ? "Focus Mode" : "Explore Mode"}
-        </div>
-        <div className="mt-2 space-y-1 text-xs text-slate-300">
-          <div>Move: W A S D</div>
-          <div>Vertical: Q / E</div>
-          <div>Speed: Hold Shift</div>
-        </div>
+      <div
+        className={`fixed top-20 z-20 space-y-3 transition-all duration-300 ${
+          selectedBuilding ? "right-[436px]" : "right-6"
+        }`}
+      >
+        {!selectedBuilding && (
+          <div className="w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+              Walking Mode
+            </div>
+            <div className="mt-2 space-y-1 text-xs text-slate-300">
+              <div>Move: W A S D</div>
+              <div>Vertical: Q / E</div>
+              <div>Sprint: Hold Shift (ramps up)</div>
+            </div>
+          </div>
+        )}
+
+        {!selectedBuilding && <Legend className="w-64" />}
       </div>
 
       {/* Side panel */}
@@ -370,9 +380,6 @@ export default function Home() {
       {city && (
         <QuestionBar city={city} onboarding={onboarding} onAnswer={handleQuestionAnswer} />
       )}
-
-      {/* Legend */}
-      <Legend />
 
       {/* Tour overlay */}
       {tourActive && onboarding && (

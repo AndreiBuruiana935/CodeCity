@@ -10,9 +10,13 @@ const LEGEND_ITEMS = [
   { color: "#8E8E93", label: "Binary / Unavailable" },
 ];
 
-export default function Legend() {
+interface LegendProps {
+  className?: string;
+}
+
+export default function Legend({ className = "" }: LegendProps) {
   return (
-    <div className="fixed right-6 top-20 z-20 w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+    <div className={`rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl ${className}`}>
       <h4 className="mb-3 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
         Legend
       </h4>
