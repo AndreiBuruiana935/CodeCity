@@ -33,6 +33,19 @@ export interface District {
   buildings: Building[];
 }
 
+export interface DistrictDetails {
+  id: string;
+  name: string;
+  neighborhood: string;
+  buildingCount: number;
+  subdistrictCount: number;
+  totalLinesOfCode: number;
+  averageRisk: number;
+  maxRisk: number;
+  description: string;
+  topFiles: string[];
+}
+
 export interface Road {
   from: string;
   to: string;

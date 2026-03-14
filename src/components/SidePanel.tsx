@@ -1,14 +1,91 @@
 "use client";
 
-import { Building } from "@/types/city";
+import { Building, DistrictDetails } from "@/types/city";
 
 interface SidePanelProps {
   building: Building | null;
+  districtDetails?: DistrictDetails | null;
   onViewCode?: (building: Building) => void;
   onClose: () => void;
 }
 
-export default function SidePanel({ building, onViewCode, onClose }: SidePanelProps) {
+export default function SidePanel({
+  building,
+  districtDetails,
+  onViewCode,
+  onClose,
+}: SidePanelProps) {
+  if (!building && !districtDetails) return null;
+
+  if (!building && districtDetails) {
+    return (
+      <div className="fixed right-0 top-[64px] z-50 h-[calc(100%-64px)] w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
+        <div className="sticky top-0 border-b border-slate-700/60 bg-slate-950/95 p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full bg-cyan-300" />
+              <span className="text-xs font-semibold tracking-[0.12em] text-cyan-200 uppercase">
+                District
+              </span>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-lg text-slate-400 transition-colors hover:text-white"
+            >
+              x
+            </button>
+          </div>
+          <h2 className="mt-2 break-words font-mono text-sm text-slate-200">
+            {districtDetails.name}
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">Neighborhood: {districtDetails.neighborhood}</p>
+        </div>
+
+        <div className="space-y-5 p-5">
+          <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+              District Overview
+            </h3>
+            <p className="text-sm leading-relaxed text-slate-300">{districtDetails.description}</p>
+          </section>
+
+          <section className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+              <div className="text-xs text-slate-400">Buildings</div>
+              <div className="text-lg font-bold text-white">{districtDetails.buildingCount}</div>
+            </div>
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+              <div className="text-xs text-slate-400">Subdistricts</div>
+              <div className="text-lg font-bold text-white">{districtDetails.subdistrictCount}</div>
+            </div>
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+              <div className="text-xs text-slate-400">Total LOC</div>
+              <div className="text-lg font-bold text-white">{districtDetails.totalLinesOfCode}</div>
+            </div>
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+              <div className="text-xs text-slate-400">Average Risk</div>
+              <div className="text-lg font-bold text-white">{districtDetails.averageRisk}</div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+              Top Risk In District
+            </h3>
+            <div className="mb-3 text-3xl font-bold text-amber-300">{districtDetails.maxRisk} / 100</div>
+            <div className="space-y-2">
+              {districtDetails.topFiles.map((file) => (
+                <div key={file} className="rounded-lg border border-slate-700/50 bg-slate-900/70 p-2 font-mono text-xs text-slate-300">
+                  {file}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   if (!building) return null;
 
   const maintainability =

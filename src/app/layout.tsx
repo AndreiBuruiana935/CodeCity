@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CodeCity — Visualize Any Codebase in 3D",
+  title: "CodeCity",
   description:
     "Transform any GitHub repository into a living, interactive 3D city where architecture becomes geography.",
 };

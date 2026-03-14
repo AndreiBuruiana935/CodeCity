@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, Suspense, lazy, useRef, useEffect } from "react";
-import { CitySchema, Building, OnboardingSummary, QuestionResponse } from "@/types/city";
+import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from "react";
+import { CitySchema, Building, OnboardingSummary, QuestionResponse, DistrictDetails } from "@/types/city";
 import SidePanel from "@/components/SidePanel";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
 import QuestionBar from "@/components/QuestionBar";
@@ -19,6 +19,7 @@ export default function Home() {
   const [city, setCity] = useState<CitySchema | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingSummary | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string | null>(null);
   const [highlightedBuildings, setHighlightedBuildings] = useState<string[]>([]);
   const [cameraTarget, setCameraTarget] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -85,8 +86,15 @@ export default function Home() {
   }, [repoUrl, githubToken]);
 
   const handleBuildingClick = useCallback((building: Building) => {
+    setSelectedDistrictId(null);
     setSelectedBuilding(building);
     setCameraTarget(building.id);
+  }, []);
+
+  const handleDistrictClick = useCallback((districtId: string) => {
+    setSelectedBuilding(null);
+    setSelectedDistrictId(districtId);
+    setCameraTarget(null);
   }, []);
 
   const handleQuestionAnswer = useCallback((response: QuestionResponse) => {
@@ -97,9 +105,47 @@ export default function Home() {
   }, []);
 
   const handleBuildingFocus = useCallback((buildingId: string) => {
+    setSelectedDistrictId(null);
     flyToTransientTarget(buildingId);
     setHighlightedBuildings([buildingId]);
   }, [flyToTransientTarget]);
+
+  const selectedDistrictDetails = useMemo((): DistrictDetails | null => {
+    if (!city || !selectedDistrictId) return null;
+    const district = city.city.districts.find((d) => d.id === selectedDistrictId);
+    if (!district) return null;
+
+    const buildingCount = district.buildings.length;
+    const totalLinesOfCode = district.buildings.reduce((sum, b) => sum + b.linesOfCode, 0);
+    const averageRisk =
+      buildingCount > 0
+        ? Math.round(district.buildings.reduce((sum, b) => sum + b.riskScore, 0) / buildingCount)
+        : 0;
+    const maxRisk = district.buildings.reduce((max, b) => Math.max(max, b.riskScore), 0);
+    const subdistrictCount = city.city.districts.filter((d) =>
+      d.name !== district.name && d.name.startsWith(`${district.name}/`)
+    ).length;
+    const topFiles = [...district.buildings]
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 5)
+      .map((b) => b.path);
+    const neighborhood = district.name === "."
+      ? "root"
+      : district.name.split("/").slice(0, -1).join("/") || "root";
+
+    return {
+      id: district.id,
+      name: district.name,
+      neighborhood,
+      buildingCount,
+      subdistrictCount,
+      totalLinesOfCode,
+      averageRisk,
+      maxRisk,
+      description: `${district.name} has ${buildingCount} file${buildingCount === 1 ? "" : "s"} with ${totalLinesOfCode} total lines. Average risk is ${averageRisk}/100, and the highest-risk file reaches ${maxRisk}/100.`,
+      topFiles,
+    };
+  }, [city, selectedDistrictId]);
 
   const handleTourStart = useCallback(() => {
     setTourActive(true);
@@ -316,6 +362,8 @@ export default function Home() {
             highlightedBuildings={highlightedBuildings}
             cameraTarget={cameraTarget}
             detailSelectionTarget={selectedBuilding?.id || null}
+            selectedDistrictId={selectedDistrictId}
+            onDistrictClick={handleDistrictClick}
             onBuildingClick={handleBuildingClick}
           />
         </Suspense>
@@ -355,6 +403,7 @@ export default function Home() {
                 setCity(null);
                 setOnboarding(null);
                 setSelectedBuilding(null);
+                setSelectedDistrictId(null);
                 setHighlightedBuildings([]);
                 setCameraTarget(null);
               }}
@@ -390,6 +439,7 @@ export default function Home() {
       {/* Side panel */}
       <SidePanel
         building={selectedBuilding}
+        districtDetails={selectedDistrictDetails}
         onViewCode={(building) => {
           if (!city?.city.name?.includes("/")) return;
           const [owner, repo] = city.city.name.split("/");
@@ -402,6 +452,7 @@ export default function Home() {
         }}
         onClose={() => {
           setSelectedBuilding(null);
+          setSelectedDistrictId(null);
           setCameraTarget(null);
           setHighlightedBuildings([]);
         }}

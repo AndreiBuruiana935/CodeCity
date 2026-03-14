@@ -15,6 +15,8 @@ interface CityRendererProps {
   highlightedBuildings: string[];
   cameraTarget: string | null;
   detailSelectionTarget: string | null;
+  selectedDistrictId: string | null;
+  onDistrictClick: (districtId: string) => void;
   onBuildingClick: (building: Building) => void;
 }
 
@@ -23,6 +25,7 @@ interface DistrictLayout {
   position: [number, number, number];
   size: [number, number];
   cols: number;
+  neighborhood: string;
 }
 
 // Single building mesh
@@ -51,6 +54,9 @@ function BuildingMesh({
 
   const width = Math.max(0.3, Math.min(building.linesOfCode / 200, 1.2));
   const height = Math.max(0.7, Math.min(building.height / 8, 14));
+  const roofLabel = building.filename.length > 24
+    ? `${building.filename.slice(0, 21)}...`
+    : building.filename;
 
   return (
     <group position={position}>
@@ -127,6 +133,20 @@ function BuildingMesh({
           </div>
         </Html>
       )}
+
+      <Text
+        position={[0, height + 0.14, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={Math.max(0.1, Math.min(width * 0.24, 0.2))}
+        maxWidth={Math.max(width * 1.5, 0.7)}
+        anchorX="center"
+        anchorY="middle"
+        color="#cfe8ff"
+        outlineWidth={0.02}
+        outlineColor="#0c1728"
+      >
+        {roofLabel}
+      </Text>
     </group>
   );
 }
@@ -136,10 +156,14 @@ function DistrictGround({
   district,
   position,
   size,
+  selected,
+  onClick,
 }: {
   district: District;
   position: [number, number, number];
   size: [number, number];
+  selected: boolean;
+  onClick: () => void;
 }) {
   return (
     <group position={position}>
@@ -147,15 +171,31 @@ function DistrictGround({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[size[0] / 2, -0.01, size[1] / 2]}
         receiveShadow
+        onClick={(e: ThreeEvent<MouseEvent>) => {
+          e.stopPropagation();
+          onClick();
+        }}
       >
         <planeGeometry args={[size[0] + 0.5, size[1] + 0.5]} />
-        <meshStandardMaterial color="#1a1a2e" transparent opacity={0.4} />
+        <meshStandardMaterial
+          color={selected ? "#13385f" : "#1a1a2e"}
+          transparent
+          opacity={selected ? 0.68 : 0.4}
+        />
       </mesh>
+
+      {selected && (
+        <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[size[0] / 2, 0.02, size[1] / 2]}>
+          <edgesGeometry args={[new THREE.PlaneGeometry(size[0] + 0.85, size[1] + 0.85)]} />
+          <lineBasicMaterial color="#67d4ff" />
+        </lineSegments>
+      )}
+
       <Text
         position={[size[0] / 2, 0.01, -0.5]}
         rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.25}
-        color="#6366f1"
+        color={selected ? "#8ee8ff" : "#6366f1"}
         anchorX="center"
         anchorY="middle"
         maxWidth={size[0]}
@@ -361,6 +401,8 @@ function CityScene({
   highlightedBuildings,
   cameraTarget,
   detailSelectionTarget,
+  selectedDistrictId,
+  onDistrictClick,
   onBuildingClick,
 }: CityRendererProps) {
   const totalBuildingCount = useMemo(
@@ -369,47 +411,101 @@ function CityScene({
   );
   const lowPerfMode = totalBuildingCount > 350;
 
-  const districtLayouts = useMemo(() => {
-    const districts = city.city.districts;
+  const layoutData = useMemo(() => {
     const spacing = 1.8;
-    const plans = districts.map((district) => {
+    const districtPlans = city.city.districts.map((district) => {
       const cols = Math.max(1, Math.ceil(Math.sqrt(district.buildings.length)));
       const rows = Math.max(1, Math.ceil(district.buildings.length / cols));
+      const neighborhood = district.name === "."
+        ? "root"
+        : district.name.split("/").slice(0, -1).join("/") || "root";
       return {
         district,
         cols,
         rows,
+        neighborhood,
         size: [cols * spacing, rows * spacing] as [number, number],
       };
     });
 
-    const count = plans.length;
-    if (count === 0) return [] as DistrictLayout[];
+    const neighborhoodMap = new Map<string, typeof districtPlans>();
+    for (const plan of districtPlans) {
+      if (!neighborhoodMap.has(plan.neighborhood)) {
+        neighborhoodMap.set(plan.neighborhood, []);
+      }
+      neighborhoodMap.get(plan.neighborhood)!.push(plan);
+    }
 
-    const gridCols = Math.ceil(Math.sqrt(count));
-    const gridRows = Math.ceil(count / gridCols);
-    const maxWidth = Math.max(...plans.map((p) => p.size[0]), spacing);
-    const maxDepth = Math.max(...plans.map((p) => p.size[1]), spacing);
-    const cellW = maxWidth + 4.2;
-    const cellD = maxDepth + 4.2;
-    const offsetX = -((gridCols - 1) * cellW) / 2;
-    const offsetZ = -((gridRows - 1) * cellD) / 2;
+    const neighborhoodEntries = [...neighborhoodMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+    if (neighborhoodEntries.length === 0) {
+      return { districtLayouts: [] as DistrictLayout[], neighborhoodLabels: [] as { name: string; position: [number, number, number] }[] };
+    }
 
-    return plans.map((plan, i) => {
-      const gx = i % gridCols;
-      const gz = Math.floor(i / gridCols);
-      const jitterX = Math.sin(i * 1.71) * 0.7;
-      const jitterZ = Math.cos(i * 1.37) * 0.7;
-      const centerX = offsetX + gx * cellW + jitterX;
-      const centerZ = offsetZ + gz * cellD + jitterZ;
+    const neighborhoodBlocks = neighborhoodEntries.map(([name, plans]) => {
+      const childCols = Math.max(1, Math.ceil(Math.sqrt(plans.length)));
+      const childRows = Math.max(1, Math.ceil(plans.length / childCols));
+      const maxDistrictW = Math.max(...plans.map((p) => p.size[0]), spacing);
+      const maxDistrictD = Math.max(...plans.map((p) => p.size[1]), spacing);
+      const childCellW = maxDistrictW + 3.6;
+      const childCellD = maxDistrictD + 3.6;
       return {
-        district: plan.district,
-        cols: plan.cols,
-        size: plan.size,
-        position: [centerX - plan.size[0] / 2, 0, centerZ - plan.size[1] / 2] as [number, number, number],
+        name,
+        plans,
+        childCols,
+        childRows,
+        childCellW,
+        childCellD,
+        width: childCols * childCellW,
+        depth: childRows * childCellD,
       };
     });
+
+    const neighborhoodGridCols = Math.ceil(Math.sqrt(neighborhoodBlocks.length));
+    const maxBlockW = Math.max(...neighborhoodBlocks.map((b) => b.width), 10);
+    const maxBlockD = Math.max(...neighborhoodBlocks.map((b) => b.depth), 10);
+    const neighborhoodCellW = maxBlockW + 9;
+    const neighborhoodCellD = maxBlockD + 9;
+    const rootOffsetX = -((neighborhoodGridCols - 1) * neighborhoodCellW) / 2;
+
+    const districtLayouts: DistrictLayout[] = [];
+    const neighborhoodLabels: { name: string; position: [number, number, number] }[] = [];
+
+    for (let i = 0; i < neighborhoodBlocks.length; i++) {
+      const block = neighborhoodBlocks[i];
+      const gx = i % neighborhoodGridCols;
+      const gz = Math.floor(i / neighborhoodGridCols);
+
+      const blockCenterX = rootOffsetX + gx * neighborhoodCellW;
+      const blockCenterZ = -((Math.ceil(neighborhoodBlocks.length / neighborhoodGridCols) - 1) * neighborhoodCellD) / 2 + gz * neighborhoodCellD;
+      neighborhoodLabels.push({
+        name: block.name,
+        position: [blockCenterX, 0.02, blockCenterZ - block.depth / 2 - 1.4],
+      });
+
+      const localOffsetX = blockCenterX - block.width / 2;
+      const localOffsetZ = blockCenterZ - block.depth / 2;
+
+      for (let j = 0; j < block.plans.length; j++) {
+        const plan = block.plans[j];
+        const lx = j % block.childCols;
+        const lz = Math.floor(j / block.childCols);
+        const districtCenterX = localOffsetX + lx * block.childCellW + block.childCellW / 2;
+        const districtCenterZ = localOffsetZ + lz * block.childCellD + block.childCellD / 2;
+        districtLayouts.push({
+          district: plan.district,
+          cols: plan.cols,
+          neighborhood: plan.neighborhood,
+          size: plan.size,
+          position: [districtCenterX - plan.size[0] / 2, 0, districtCenterZ - plan.size[1] / 2],
+        });
+      }
+    }
+
+    return { districtLayouts, neighborhoodLabels };
   }, [city]);
+
+  const districtLayouts = layoutData.districtLayouts;
+  const neighborhoodLabels = layoutData.neighborhoodLabels;
 
   const buildingPositions = useMemo(() => {
     const positions = new Map<string, [number, number, number]>();
@@ -530,7 +626,25 @@ function CityScene({
           district={dl.district}
           position={dl.position}
           size={dl.size}
+          selected={selectedDistrictId === dl.district.id}
+          onClick={() => onDistrictClick(dl.district.id)}
         />
+      ))}
+
+      {neighborhoodLabels.map((neighborhood) => (
+        <Text
+          key={neighborhood.name}
+          position={neighborhood.position}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.35}
+          color="#95f0ff"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.03}
+          outlineColor="#081424"
+        >
+          {neighborhood.name}
+        </Text>
       ))}
 
       {/* Buildings */}
