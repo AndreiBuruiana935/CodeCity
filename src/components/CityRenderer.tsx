@@ -612,32 +612,6 @@ export default function CityRenderer(props: CityRendererProps) {
       >
         <CityScene {...props} />
       </Canvas>
-
-      <div
-        style={{
-          position: "absolute",
-          left: 16,
-          bottom: 16,
-          zIndex: 8,
-          color: "#d7e2f0",
-          background: "rgba(8, 14, 24, 0.68)",
-          border: "1px solid rgba(102, 152, 230, 0.28)",
-          borderRadius: 12,
-          padding: "10px 12px",
-          fontSize: 12,
-          lineHeight: 1.4,
-          backdropFilter: "blur(4px)",
-          pointerEvents: "none",
-          boxShadow: "0 10px 24px rgba(0,0,0,0.24)",
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {props.cameraTarget ? "Focus Mode" : "Explore Mode"}
-        </div>
-        <div>Move: W A S D</div>
-        <div>Vertical: Q / E</div>
-        <div>Boost: Shift</div>
-      </div>
     </div>
   );
 }

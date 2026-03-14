@@ -12,8 +12,8 @@ const LEGEND_ITEMS = [
 
 export default function Legend() {
   return (
-    <div className="fixed bottom-6 right-6 z-20 bg-gray-900/90 border border-gray-700 rounded-xl p-4 backdrop-blur-sm">
-      <h4 className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-3">
+    <div className="fixed right-6 top-20 z-20 w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+      <h4 className="mb-3 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
         Legend
       </h4>
       <div className="space-y-2">
@@ -23,7 +23,7 @@ export default function Legend() {
               className="w-3 h-3 rounded-sm"
               style={{ backgroundColor: item.color }}
             />
-            <span className="text-gray-300 text-xs">{item.label}</span>
+            <span className="text-xs text-slate-300">{item.label}</span>
           </div>
         ))}
       </div>

@@ -10,6 +10,27 @@ interface SidePanelProps {
 export default function SidePanel({ building, onClose }: SidePanelProps) {
   if (!building) return null;
 
+  const maintainability =
+    building.complexity > 12
+      ? "Low"
+      : building.complexity > 7
+      ? "Medium"
+      : "High";
+
+  const volatility =
+    building.dependencyCount > 10
+      ? "High"
+      : building.dependencyCount > 4
+      ? "Medium"
+      : "Low";
+
+  const primaryAction =
+    building.riskScore > 70
+      ? "Refactor high-complexity paths and isolate dependencies."
+      : building.riskScore > 40
+      ? "Add tests around critical logic and monitor changes."
+      : "Keep this file stable and document ownership.";
+
   const riskColor =
     building.riskScore > 60
       ? "text-red-400"
@@ -18,86 +39,97 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
       : "text-green-400";
 
   return (
-    <div className="fixed right-0 top-0 h-full w-96 bg-gray-900/95 border-l border-gray-700 overflow-y-auto z-50 backdrop-blur-sm animate-slide-in">
+    <div className="fixed right-0 top-0 z-50 h-full w-[420px] max-w-[92vw] overflow-y-auto border-l border-cyan-300/20 bg-slate-950/88 backdrop-blur-xl animate-slide-in">
       {/* Header */}
-      <div className="sticky top-0 bg-gray-900/95 border-b border-gray-700 p-4">
+      <div className="sticky top-0 border-b border-slate-700/60 bg-slate-950/95 p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className="w-3 h-3 rounded-full"
+              className="h-3 w-3 rounded-full"
               style={{ backgroundColor: building.color }}
             />
-            <span className="text-xs font-mono text-gray-400">
+            <span className="text-xs font-semibold tracking-[0.12em] text-cyan-200 uppercase">
               {building.colorLabel}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors text-lg"
+            className="text-lg text-slate-400 transition-colors hover:text-white"
           >
             x
           </button>
         </div>
-        <h2 className="text-white font-bold text-lg mt-2 font-mono">
+        <h2 className="mt-2 break-words font-mono text-sm text-slate-200">
           {building.path}
         </h2>
       </div>
 
-      <div className="p-4 space-y-6">
+      <div className="space-y-5 p-5">
         {/* AI Summary */}
-        <section>
-          <h3 className="text-indigo-400 font-semibold text-sm uppercase tracking-wide mb-2">
-            AI Summary
+        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+          <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+            Summary
           </h3>
-          <p className="text-gray-300 text-sm leading-relaxed">
+          <p className="text-sm leading-relaxed text-slate-300">
             {building.aiSummary || "Analysis pending..."}
           </p>
         </section>
 
         {/* Stats grid */}
         <section className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-800/50 rounded-lg p-3">
-            <div className="text-gray-400 text-xs">Lines of Code</div>
-            <div className="text-white font-bold text-lg">
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Lines of Code</div>
+            <div className="text-lg font-bold text-white">
               {building.linesOfCode}
             </div>
           </div>
-          <div className="bg-gray-800/50 rounded-lg p-3">
-            <div className="text-gray-400 text-xs">Complexity</div>
-            <div className="text-white font-bold text-lg">
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Complexity</div>
+            <div className="text-lg font-bold text-white">
               {building.complexity}
             </div>
           </div>
-          <div className="bg-gray-800/50 rounded-lg p-3">
-            <div className="text-gray-400 text-xs">Dependencies</div>
-            <div className="text-white font-bold text-lg">
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Dependencies</div>
+            <div className="text-lg font-bold text-white">
               {building.dependencyCount}
             </div>
           </div>
-          <div className="bg-gray-800/50 rounded-lg p-3">
-            <div className="text-gray-400 text-xs">Functions</div>
-            <div className="text-white font-bold text-lg">
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Functions</div>
+            <div className="text-lg font-bold text-white">
               {building.functions.length}
             </div>
           </div>
         </section>
 
+        <section className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Maintainability</div>
+            <div className="mt-1 text-sm font-semibold text-slate-100">{maintainability}</div>
+          </div>
+          <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
+            <div className="text-xs text-slate-400">Dependency Volatility</div>
+            <div className="mt-1 text-sm font-semibold text-slate-100">{volatility}</div>
+          </div>
+        </section>
+
         {/* Functions */}
         {building.functions.length > 0 && (
-          <section>
-            <h3 className="text-indigo-400 font-semibold text-sm uppercase tracking-wide mb-2">
-              Functions
+          <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+              Functions Overview
             </h3>
             <div className="space-y-2">
-              {building.functions.map((fn, i) => (
+              {building.functions.slice(0, 12).map((fn, i) => (
                 <div
                   key={i}
-                  className="bg-gray-800/50 rounded-lg p-3 font-mono text-xs"
+                  className="rounded-lg border border-slate-700/50 bg-slate-900/70 p-3 font-mono text-xs"
                 >
-                  <div className="text-white">
+                  <div className="text-slate-100">
                     {fn.name}({fn.params.join(", ")})
                   </div>
-                  <div className="text-gray-400 mt-1">
+                  <div className="mt-1 text-slate-400">
                     lines {fn.lines} | complexity: {fn.complexity}
                   </div>
                 </div>
@@ -108,15 +140,15 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
 
         {/* Dependencies */}
         {building.dependencies.length > 0 && (
-          <section>
-            <h3 className="text-indigo-400 font-semibold text-sm uppercase tracking-wide mb-2">
+          <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
               Dependencies
             </h3>
             <div className="flex flex-wrap gap-2">
               {building.dependencies.map((dep, i) => (
                 <span
                   key={i}
-                  className="bg-gray-800/50 text-gray-300 text-xs px-2 py-1 rounded-md font-mono"
+                  className="rounded-md border border-slate-700/60 bg-slate-900/70 px-2 py-1 font-mono text-xs text-slate-300"
                 >
                   {dep}
                 </span>
@@ -126,17 +158,17 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
         )}
 
         {/* Risk Score */}
-        <section>
-          <h3 className="text-indigo-400 font-semibold text-sm uppercase tracking-wide mb-2">
+        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
+          <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
             Risk Score
           </h3>
           <div className="flex items-center gap-3">
             <div className={`text-4xl font-bold ${riskColor}`}>
               {building.riskScore}
             </div>
-            <div className="text-gray-400 text-sm">/ 100</div>
+            <div className="text-sm text-slate-400">/ 100</div>
           </div>
-          <div className="mt-2 h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
             <div
               className="h-full rounded-full transition-all duration-1000"
               style={{
@@ -145,19 +177,20 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
               }}
             />
           </div>
+          <p className="mt-3 text-sm text-slate-300">{primaryAction}</p>
         </section>
 
         {/* Warnings */}
         {building.aiWarnings.length > 0 && (
-          <section>
-            <h3 className="text-orange-400 font-semibold text-sm uppercase tracking-wide mb-2">
+          <section className="rounded-2xl border border-orange-400/25 bg-orange-950/20 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-orange-300 uppercase">
               Warnings
             </h3>
             <ul className="space-y-2">
               {building.aiWarnings.map((w, i) => (
                 <li
                   key={i}
-                  className="text-sm text-orange-300/80 flex items-start gap-2"
+                  className="flex items-start gap-2 text-sm text-orange-200/85"
                 >
                   <span className="text-orange-400 mt-0.5">!</span>
                   {w}
@@ -169,8 +202,8 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
 
         {/* Reading list priority */}
         {building.readingListPriority < 999 && (
-          <section className="bg-indigo-900/30 border border-indigo-700/50 rounded-lg p-3">
-            <div className="text-indigo-300 text-sm">
+          <section className="rounded-xl border border-cyan-400/30 bg-cyan-900/20 p-3">
+            <div className="text-sm text-cyan-200">
               Reading List Priority: #{building.readingListPriority}
             </div>
           </section>
@@ -179,12 +212,12 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
         {/* Badges */}
         <div className="flex flex-wrap gap-2 pb-4">
           {building.entryPoint && (
-            <span className="bg-blue-900/50 text-blue-300 text-xs px-2 py-1 rounded-full">
+            <span className="rounded-full border border-blue-400/40 bg-blue-900/30 px-2 py-1 text-xs text-blue-200">
               Entry Point
             </span>
           )}
           {building.securitySensitive && (
-            <span className="bg-purple-900/50 text-purple-300 text-xs px-2 py-1 rounded-full">
+            <span className="rounded-full border border-purple-400/40 bg-purple-900/30 px-2 py-1 text-xs text-purple-200">
               Security Sensitive
             </span>
           )}

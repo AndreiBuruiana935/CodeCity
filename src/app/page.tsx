@@ -16,7 +16,6 @@ export default function Home() {
   const [state, setState] = useState<AppState>("landing");
   const [repoUrl, setRepoUrl] = useState("");
   const [githubToken, setGithubToken] = useState("");
-  const [showTokenInput, setShowTokenInput] = useState(false);
   const [city, setCity] = useState<CitySchema | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingSummary | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -302,16 +301,16 @@ export default function Home() {
       )}
 
       {/* Top bar */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-gray-900/80 backdrop-blur-sm border-b border-gray-800">
-        <div className="flex items-center justify-between px-6 py-3">
+      <div className="fixed left-0 right-0 top-0 z-20 border-b border-cyan-300/15 bg-slate-950/75 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-4">
-            <h1 className="text-white font-bold">
-              Code<span className="text-indigo-400">City</span>
+            <h1 className="bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-xl font-bold text-transparent">
+              Code City
             </h1>
-            <span className="text-gray-400 text-sm font-mono">
+            <span className="font-mono text-sm text-slate-300">
               {city?.city.name}
             </span>
-            <span className="text-gray-600 text-xs">
+            <span className="text-xs text-slate-500">
               {city?.city.language} / {city?.city.framework} /{" "}
               {city?.city.architecture}
             </span>
@@ -319,13 +318,13 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowOnboarding(true)}
-              className="text-gray-400 hover:text-white text-sm transition"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               Guide
             </button>
             <button
               onClick={handleTourStart}
-              className="text-gray-400 hover:text-white text-sm transition"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               Tour
             </button>
@@ -338,11 +337,22 @@ export default function Home() {
                 setHighlightedBuildings([]);
                 setCameraTarget(null);
               }}
-              className="text-gray-400 hover:text-white text-sm transition"
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
             >
               New
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="fixed bottom-6 right-6 z-20 w-64 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+        <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
+          {cameraTarget ? "Focus Mode" : "Explore Mode"}
+        </div>
+        <div className="mt-2 space-y-1 text-xs text-slate-300">
+          <div>Move: W A S D</div>
+          <div>Vertical: Q / E</div>
+          <div>Speed: Hold Shift</div>
         </div>
       </div>
 
