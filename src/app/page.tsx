@@ -11,7 +11,15 @@ import Legend from "@/components/Legend";
 
 const CityRenderer = lazy(() => import("@/components/CityRenderer"));
 
-type AppState = "landing" | "loading" | "city";
+type AppState = "landing" | "projects" | "loading" | "city";
+
+type EntryMode = "guest" | "github";
+
+interface CityHistoryItem {
+  repoUrl: string;
+  label: string;
+  timestamp: number;
+}
 
 interface UserRepo {
   id: number;
@@ -24,15 +32,64 @@ interface UserRepo {
   updatedAt: string;
 }
 
+interface RepoDetails {
+  repo: {
+    fullName: string;
+    description: string | null;
+    private: boolean;
+    archived: boolean;
+    disabled: boolean;
+    visibility: string;
+    homepage: string | null;
+    owner: string;
+    sizeKb: number;
+    stars: number;
+    watchers: number;
+    forks: number;
+    network: number;
+    openIssues: number;
+    defaultBranch: string;
+    license: string | null;
+    topics: string[];
+    language: string | null;
+    createdAt: string;
+    updatedAt: string;
+    pushedAt: string;
+    fileCount: number | null;
+  };
+  lastCommit: {
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+    url: string;
+  } | null;
+  contributors: Array<{
+    login: string;
+    url: string;
+    contributions: number;
+  }>;
+}
+
 export default function Home() {
   const { data: session, status } = useSession();
   const [state, setState] = useState<AppState>("landing");
+  const [entryMode, setEntryMode] = useState<EntryMode>("guest");
   const [repoUrl, setRepoUrl] = useState("");
   const [githubToken, setGithubToken] = useState("");
   const [repoSearch, setRepoSearch] = useState("");
   const [repos, setRepos] = useState<UserRepo[]>([]);
   const [repoLoading, setRepoLoading] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
+  const [githubAuthReady, setGithubAuthReady] = useState<boolean | null>(null);
+  const [selectedProjectFullName, setSelectedProjectFullName] = useState<string | null>(null);
+  const [selectedProjectUrl, setSelectedProjectUrl] = useState<string>("");
+  const [projectDetails, setProjectDetails] = useState<RepoDetails | null>(null);
+  const [projectDetailsLoading, setProjectDetailsLoading] = useState(false);
+  const [projectDetailsError, setProjectDetailsError] = useState<string | null>(null);
+  const [repoInputMode, setRepoInputMode] = useState<"link" | "list">("list");
+  const [cityHistory, setCityHistory] = useState<CityHistoryItem[]>([]);
+  const [showCitySelector, setShowCitySelector] = useState(false);
   const [city, setCity] = useState<CitySchema | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingSummary | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -42,9 +99,47 @@ export default function Home() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [tourActive, setTourActive] = useState(false);
   const [tourStep, setTourStep] = useState(0);
+  const [signInPending, setSignInPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState("");
   const transientCameraTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkAuthConfig() {
+      try {
+        const res = await fetch("/api/auth/config-status", { method: "GET" });
+        const data = await res.json();
+        if (!cancelled) {
+          setGithubAuthReady(Boolean(data.githubOauthConfigured));
+        }
+      } catch {
+        if (!cancelled) {
+          setGithubAuthReady(false);
+        }
+      }
+    }
+
+    checkAuthConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("codecity.repoHistory");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as CityHistoryItem[];
+      if (Array.isArray(parsed)) {
+        setCityHistory(parsed.slice(0, 12));
+      }
+    } catch {
+      // Ignore malformed local history
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -59,7 +154,16 @@ export default function Home() {
       setRepos([]);
       setRepoError(null);
       setRepoSearch("");
+      setEntryMode("guest");
+      if (state === "projects") {
+        setState("landing");
+      }
       return;
+    }
+
+    setEntryMode("github");
+    if (state === "landing") {
+      setState("projects");
     }
 
     let cancelled = false;
@@ -95,7 +199,56 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [status]);
+  }, [status, state]);
+
+  useEffect(() => {
+    if (
+      state !== "projects" ||
+      status !== "authenticated" ||
+      !selectedProjectFullName
+    ) {
+      return;
+    }
+    const fullName = selectedProjectFullName;
+
+    let cancelled = false;
+
+    async function loadProjectDetails() {
+      setProjectDetailsLoading(true);
+      setProjectDetailsError(null);
+
+      try {
+        const res = await fetch(
+          `/api/github/repo-details?fullName=${encodeURIComponent(fullName)}`,
+          { method: "GET" }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load repository details");
+        }
+
+        if (!cancelled) {
+          setProjectDetails(data as RepoDetails);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProjectDetailsError(
+            err instanceof Error ? err.message : "Failed to load repository details"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setProjectDetailsLoading(false);
+        }
+      }
+    }
+
+    loadProjectDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectFullName, state, status]);
 
   const filteredRepos = useMemo(() => {
     const term = repoSearch.trim().toLowerCase();
@@ -106,6 +259,47 @@ export default function Home() {
       )
       .slice(0, 40);
   }, [repoSearch, repos]);
+
+  const filteredHistory = useMemo(() => {
+    const term = repoSearch.trim().toLowerCase();
+    if (!term) return cityHistory.slice(0, 10);
+    return cityHistory
+      .filter((item) => item.label.toLowerCase().includes(term))
+      .slice(0, 10);
+  }, [cityHistory, repoSearch]);
+
+  const persistHistory = useCallback((nextHistory: CityHistoryItem[]) => {
+    setCityHistory(nextHistory);
+    try {
+      window.localStorage.setItem(
+        "codecity.repoHistory",
+        JSON.stringify(nextHistory)
+      );
+    } catch {
+      // Ignore persistence errors
+    }
+  }, []);
+
+  const rememberCity = useCallback(
+    (rawRepoUrl: string) => {
+      const trimmed = rawRepoUrl.trim();
+      if (!trimmed) return;
+      const normalized = trimmed.replace(/\/$/, "");
+      const label = normalized.replace(/^https?:\/\/github\.com\//i, "");
+      const next = [
+        {
+          repoUrl: normalized,
+          label,
+          timestamp: Date.now(),
+        },
+        ...cityHistory.filter(
+          (entry) => entry.repoUrl.toLowerCase() !== normalized.toLowerCase()
+        ),
+      ].slice(0, 12);
+      persistHistory(next);
+    },
+    [cityHistory, persistHistory]
+  );
 
   const flyToTransientTarget = useCallback((buildingId: string) => {
     if (transientCameraTimeoutRef.current) {
@@ -118,18 +312,22 @@ export default function Home() {
     }, 1800);
   }, []);
 
-  const handleAnalyze = useCallback(async () => {
-    if (!repoUrl.trim()) return;
+  const handleAnalyze = useCallback(async (overrideRepoUrl?: string) => {
+    const effectiveRepoUrl = (overrideRepoUrl || repoUrl).trim();
+    if (!effectiveRepoUrl) return;
     setState("loading");
     setError(null);
     setLoadingProgress("Fetching repository structure...");
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
-          repoUrl: repoUrl.trim(),
+          repoUrl: effectiveRepoUrl,
           options: {
             depth: "full",
             includeTests: false,
@@ -138,6 +336,7 @@ export default function Home() {
           },
         }),
       });
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const data = await res.json();
@@ -148,13 +347,66 @@ export default function Home() {
       const data = await res.json();
       setCity(data.city);
       setOnboarding(data.onboarding);
+      rememberCity(effectiveRepoUrl);
       setState("city");
       setShowOnboarding(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError("Analysis timed out after 120 seconds. Try a smaller repository or shallow mode.");
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      }
       setState("landing");
     }
-  }, [repoUrl, githubToken]);
+  }, [repoUrl, githubToken, rememberCity]);
+
+  const openCityFromRepo = useCallback(
+    (nextRepoUrl: string) => {
+      setRepoUrl(nextRepoUrl);
+      setError(null);
+      setShowCitySelector(false);
+      setSelectedBuilding(null);
+      setSelectedDistrictId(null);
+      setHighlightedBuildings([]);
+      setCameraTarget(null);
+      void handleAnalyze(nextRepoUrl);
+    },
+    [handleAnalyze]
+  );
+
+  const selectProject = useCallback((nextRepoUrl: string) => {
+    const normalized = nextRepoUrl.replace(/\/$/, "");
+    const fullName = normalized.replace(/^https?:\/\/github\.com\//i, "");
+    if (!/^[^/]+\/[^/]+$/.test(fullName)) {
+      setProjectDetails(null);
+      setProjectDetailsError("Invalid GitHub repository URL");
+      setSelectedProjectFullName(null);
+      setSelectedProjectUrl(normalized);
+      return;
+    }
+
+    setSelectedProjectUrl(normalized);
+    setSelectedProjectFullName(fullName);
+    setProjectDetails(null);
+    setProjectDetailsError(null);
+  }, []);
+
+  const handleGitHubSignIn = useCallback(async () => {
+    setError(null);
+    setSignInPending(true);
+    try {
+      await signIn("github", { callbackUrl: "/" });
+    } catch {
+      setSignInPending(false);
+      setError("Failed to start GitHub sign in. Please try again.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      setSignInPending(false);
+    }
+  }, [status]);
 
   const handleBuildingClick = useCallback((building: Building) => {
     setSelectedDistrictId(null);
@@ -246,6 +498,26 @@ export default function Home() {
 
   // Landing page
   if (state === "landing") {
+    if (signInPending) {
+      return (
+        <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050b15] text-slate-100">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(34,211,238,0.2),transparent_42%),radial-gradient(circle_at_78%_80%,rgba(59,130,246,0.2),transparent_40%)]" />
+          <div className="relative w-[min(560px,92vw)] rounded-3xl border border-cyan-300/20 bg-slate-950/75 p-8 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+            <div className="mb-6 flex items-center justify-center gap-3">
+              <span className="h-3 w-3 animate-pulse rounded-full bg-cyan-300" />
+              <span className="h-3 w-3 animate-pulse rounded-full bg-blue-300 [animation-delay:180ms]" />
+              <span className="h-3 w-3 animate-pulse rounded-full bg-emerald-300 [animation-delay:320ms]" />
+            </div>
+            <div className="mx-auto mb-5 h-16 w-16 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-200" />
+            <h2 className="text-center text-2xl font-semibold text-white">Redirecting to GitHub</h2>
+            <p className="mt-3 text-center text-sm text-slate-300">
+              Preparing secure OAuth sign-in so you can grant repository access.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="relative min-h-screen overflow-hidden bg-[#070d17] text-slate-100">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(80,200,255,0.22),transparent_40%),radial-gradient(circle_at_80%_10%,rgba(73,134,255,0.25),transparent_42%),radial-gradient(circle_at_52%_82%,rgba(78,255,177,0.16),transparent_45%)]" />
@@ -259,11 +531,16 @@ export default function Home() {
             <div className="animate-fluid-gradient bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
               Code City
             </div>
-            {status === "authenticated" ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-300">
-                  Signed in as {session?.user?.name || session?.user?.email || "GitHub user"}
-                </span>
+            <div className="flex items-center gap-3">
+              <a
+                href="https://github.com/settings/tokens/new?scopes=repo&description=CodeCity"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg border border-cyan-300/35 bg-slate-900/65 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-slate-900"
+              >
+                Get Access Token
+              </a>
+              {status === "authenticated" && (
                 <button
                   type="button"
                   onClick={() => signOut()}
@@ -271,16 +548,8 @@ export default function Home() {
                 >
                   Sign out
                 </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => signIn("github")}
-                className="rounded-lg border border-cyan-300/40 bg-slate-900/70 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-slate-900"
-              >
-                Sign in with GitHub
-              </button>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="mt-8 grid flex-1 items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
@@ -325,6 +594,41 @@ export default function Home() {
                   </h2>
                 </div>
 
+                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setEntryMode("guest")}
+                    className={`group relative overflow-hidden rounded-2xl border px-4 py-3.5 text-left transition ${
+                      entryMode === "guest"
+                        ? "border-cyan-300/70 bg-[linear-gradient(150deg,rgba(8,145,178,0.28),rgba(15,23,42,0.7))] shadow-[0_12px_35px_rgba(8,145,178,0.25)]"
+                        : "border-slate-600/50 bg-slate-900/45 hover:border-cyan-300/40 hover:bg-slate-900/65"
+                    }`}
+                  >
+                    <div className="absolute -right-7 -top-8 h-16 w-16 rounded-full bg-cyan-300/15 blur-xl" />
+                    <div className="relative">
+                      <p className="text-[11px] font-semibold tracking-[0.13em] text-cyan-200 uppercase">Classic</p>
+                      <p className="mt-1 text-sm font-semibold text-white">Use as Guest</p>
+                      <p className="mt-1 text-xs text-slate-300">Paste a repo link manually and start instantly.</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntryMode("github")}
+                    className={`group relative overflow-hidden rounded-2xl border px-4 py-3.5 text-left transition ${
+                      entryMode === "github"
+                        ? "border-emerald-300/70 bg-[linear-gradient(150deg,rgba(5,150,105,0.25),rgba(15,23,42,0.7))] shadow-[0_12px_35px_rgba(16,185,129,0.2)]"
+                        : "border-slate-600/50 bg-slate-900/45 hover:border-emerald-300/45 hover:bg-slate-900/65"
+                    }`}
+                  >
+                    <div className="absolute -right-7 -top-8 h-16 w-16 rounded-full bg-emerald-300/15 blur-xl" />
+                    <div className="relative">
+                      <p className="text-[11px] font-semibold tracking-[0.13em] text-emerald-200 uppercase">Recommended</p>
+                      <p className="mt-1 text-sm font-semibold text-white">Use GitHub Mode</p>
+                      <p className="mt-1 text-xs text-slate-300">Then use the dedicated sign-in panel below.</p>
+                    </div>
+                  </button>
+                </div>
+
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -332,177 +636,109 @@ export default function Home() {
                   }}
                   className="space-y-4"
                 >
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
-                      Repository URL
-                    </label>
-                    <input
-                      type="text"
-                      value={repoUrl}
-                      onChange={(e) => setRepoUrl(e.target.value)}
-                      placeholder="https://github.com/owner/repo"
-                      className="w-full rounded-xl border border-slate-600/50 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
-                        Your GitHub Repositories
-                      </p>
-                      {status === "authenticated" && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setRepoLoading(true);
-                            setRepoError(null);
-                            try {
-                              const res = await fetch("/api/github/repos", { method: "GET" });
-                              const data = await res.json();
-                              if (!res.ok) {
-                                throw new Error(data.error || "Failed to reload repositories");
-                              }
-                              setRepos((data.repos || []) as UserRepo[]);
-                            } catch (err) {
-                              setRepoError(
-                                err instanceof Error
-                                  ? err.message
-                                  : "Failed to reload repositories"
-                              );
-                            } finally {
-                              setRepoLoading(false);
-                            }
-                          }}
-                          className="rounded-md border border-slate-500/35 bg-slate-900/70 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-                        >
-                          Refresh
-                        </button>
-                      )}
-                    </div>
-
-                    {status !== "authenticated" ? (
-                      <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 p-3 text-xs text-slate-300">
-                        Sign in with GitHub to browse repos you own or collaborate on.
-                      </div>
-                    ) : (
-                      <>
+                  {entryMode === "guest" && (
+                    <>
+                      <div>
+                        <label className="mb-2 block text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
+                          Repository URL
+                        </label>
                         <input
                           type="text"
-                          value={repoSearch}
-                          onChange={(e) => setRepoSearch(e.target.value)}
-                          placeholder="Search repos"
-                          className="mb-2 w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                          value={repoUrl}
+                          onChange={(e) => setRepoUrl(e.target.value)}
+                          placeholder="https://github.com/owner/repo"
+                          className="w-full rounded-xl border border-slate-600/50 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                         />
+                      </div>
 
-                        <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-                          {repoLoading && (
-                            <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
-                              Loading repositories...
+                      <div>
+                        <label className="mb-2 block text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
+                          GitHub Token (optional)
+                        </label>
+                        <input
+                          type="password"
+                          value={githubToken}
+                          onChange={(e) => setGithubToken(e.target.value)}
+                          placeholder="Recommended for large repos"
+                          className="w-full rounded-xl border border-slate-600/50 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                        />
+                        <p className="mt-2 text-xs text-slate-400">
+                          {githubToken
+                            ? "Token detected"
+                            : "Optional but recommended for larger repos"}
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  {entryMode === "github" && status !== "authenticated" && (
+                    <div className="rounded-xl border border-cyan-300/30 bg-cyan-900/15 p-4 text-sm text-cyan-100">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="max-w-md">
+                          <p>Sign in with GitHub to authorize this app and access your repositories.</p>
+                          {githubAuthReady === false && (
+                            <div className="mt-2 text-xs text-amber-200">
+                              OAuth config missing. Update .env.local and restart the app.
                             </div>
                           )}
-
-                          {!repoLoading && filteredRepos.length === 0 && (
-                            <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-                              No repositories found for this search.
-                            </div>
-                          )}
-
-                          {!repoLoading &&
-                            filteredRepos.map((repo) => {
-                              const selected =
-                                repoUrl.trim().toLowerCase() ===
-                                `https://github.com/${repo.fullName}`.toLowerCase();
-
-                              return (
-                                <div
-                                  key={repo.id}
-                                  className={`rounded-lg border px-2.5 py-2 transition ${
-                                    selected
-                                      ? "border-cyan-300/55 bg-cyan-900/15"
-                                      : "border-slate-700/60 bg-slate-950/60"
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setRepoUrl(`https://github.com/${repo.fullName}`)
-                                      }
-                                      className="min-w-0 text-left"
-                                    >
-                                      <p className="truncate text-xs font-semibold text-slate-100">
-                                        {repo.fullName}
-                                      </p>
-                                      <p className="text-[11px] text-slate-400">
-                                        {repo.private ? "Private" : "Public"} · {repo.role}
-                                      </p>
-                                    </button>
-                                    <a
-                                      href={repo.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-                                    >
-                                      Open
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
                         </div>
-
-                        {repoError && (
-                          <p className="mt-2 text-xs text-rose-300">{repoError}</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold tracking-[0.13em] text-slate-300 uppercase">
-                      GitHub Token (optional override)
-                    </label>
-                    <input
-                      type="password"
-                      value={githubToken}
-                      onChange={(e) => setGithubToken(e.target.value)}
-                      placeholder="Recommended for large repos"
-                      className="w-full rounded-xl border border-slate-600/50 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
-                    />
-                    <p className="mt-2 text-xs text-slate-400">
-                      {githubToken
-                        ? "Token detected"
-                        : "Optional but recommended for larger repos"}
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="group relative inline-flex w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
-                  >
-                    <span className="absolute inset-0 -translate-x-full bg-white/30 transition-transform duration-700 group-hover:translate-x-full" />
-                    <span className="relative">Analyze Repository</span>
-                  </button>
-
-                  <div className="pt-1">
-                    <p className="mb-2 text-xs font-semibold tracking-[0.13em] text-slate-400 uppercase">
-                      Quick Start
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {["facebook/react", "vercel/next.js", "denoland/deno"].map(
-                        (example) => (
-                          <button
-                            key={example}
-                            type="button"
-                            onClick={() => setRepoUrl(`https://github.com/${example}`)}
-                            className="rounded-full border border-slate-500/35 bg-slate-900/50 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-                          >
-                            {example}
-                          </button>
-                        )
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleGitHubSignIn();
+                          }}
+                          className="shrink-0 rounded-lg border border-cyan-200/45 bg-cyan-500/20 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-100/80 hover:bg-cyan-500/30"
+                        >
+                          Continue with GitHub
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {entryMode === "github" && status === "authenticated" && (
+                    <div className="rounded-xl border border-emerald-300/35 bg-emerald-900/15 p-4 text-sm text-emerald-100">
+                      Connected as {session?.user?.name || session?.user?.email || "GitHub user"}. Open your projects workspace to browse repositories and analyze a city.
+                      <button
+                        type="button"
+                        onClick={() => setState("projects")}
+                        className="mt-3 rounded-lg border border-emerald-200/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:border-emerald-100/80 hover:bg-emerald-500/30"
+                      >
+                        Open Projects Workspace
+                      </button>
+                    </div>
+                  )}
+
+                  {entryMode === "guest" && (
+                    <button
+                      type="submit"
+                      className="group relative inline-flex w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                    >
+                      <span className="absolute inset-0 -translate-x-full bg-white/30 transition-transform duration-700 group-hover:translate-x-full" />
+                      <span className="relative">Analyze Repository</span>
+                    </button>
+                  )}
+
+                  {entryMode === "guest" && (
+                    <div className="pt-1">
+                      <p className="mb-2 text-xs font-semibold tracking-[0.13em] text-slate-400 uppercase">
+                        Quick Start
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {["facebook/react", "vercel/next.js", "denoland/deno"].map(
+                          (example) => (
+                            <button
+                              key={example}
+                              type="button"
+                              onClick={() => setRepoUrl(`https://github.com/${example}`)}
+                              className="rounded-full border border-slate-500/35 bg-slate-900/50 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                            >
+                              {example}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </form>
 
                 {error && (
@@ -511,10 +747,354 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="mt-5 border-t border-slate-700/50 pt-4 text-xs text-slate-400">
-                  No upload needed. Analysis runs directly from GitHub.
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "projects") {
+    return (
+      <div className="relative h-screen overflow-hidden bg-[#070d17] text-slate-100">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(80,200,255,0.2),transparent_42%),radial-gradient(circle_at_84%_10%,rgba(64,255,192,0.15),transparent_38%)]" />
+        <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col px-6 py-8 md:px-10 lg:px-14">
+            <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h1 className="bg-gradient-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-bold text-transparent">
+                Projects Workspace
+              </h1>
+              <p className="mt-1 text-sm text-slate-300">
+                Signed in as {session?.user?.name || session?.user?.email || "GitHub user"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="rounded-lg border border-slate-500/45 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <div className="grid h-[calc(100vh-11rem)] min-h-0 flex-1 gap-4 lg:grid-cols-[0.95fr_1.25fr]">
+            <section className="min-h-0 overflow-hidden rounded-2xl border border-slate-600/45 bg-slate-950/75 p-4 backdrop-blur-xl">
+              <div className="mb-3 rounded-xl border border-slate-700/60 bg-slate-900/50 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
+                  Analyze External Repository
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                    className="w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                  />
+                  <input
+                    type="password"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder="Optional token override"
+                    className="w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => selectProject(repoUrl)}
+                      disabled={!repoUrl.trim()}
+                      className="rounded-lg border border-slate-500/45 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Preview Details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleAnalyze(repoUrl);
+                      }}
+                      disabled={!repoUrl.trim()}
+                      className="rounded-lg bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Analyze Now
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-200">
+                  Select Project
+                </h2>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setRepoLoading(true);
+                    setRepoError(null);
+                    try {
+                      const res = await fetch("/api/github/repos", { method: "GET" });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        throw new Error(data.error || "Failed to reload repositories");
+                      }
+                      setRepos((data.repos || []) as UserRepo[]);
+                    } catch (err) {
+                      setRepoError(
+                        err instanceof Error ? err.message : "Failed to reload repositories"
+                      );
+                    } finally {
+                      setRepoLoading(false);
+                    }
+                  }}
+                  className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              <input
+                type="text"
+                value={repoSearch}
+                onChange={(e) => setRepoSearch(e.target.value)}
+                placeholder="Search history and repos"
+                className="mb-3 w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+              />
+
+              <div className="h-full min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    Recent Cities
+                  </p>
+                  <div className="space-y-1">
+                    {filteredHistory.length === 0 && (
+                      <div className="rounded-md border border-slate-700/50 bg-slate-950/60 px-2.5 py-2 text-xs text-slate-400">
+                        No history yet.
+                      </div>
+                    )}
+                    {filteredHistory.map((item) => {
+                      const selected = selectedProjectUrl === item.repoUrl;
+                      return (
+                        <button
+                          key={`${item.repoUrl}-${item.timestamp}`}
+                          type="button"
+                          onClick={() => selectProject(item.repoUrl)}
+                          className={`w-full rounded-md border px-2.5 py-2 text-left transition ${
+                            selected
+                              ? "border-cyan-300/60 bg-cyan-900/20"
+                              : "border-slate-700/60 bg-slate-950/60 hover:border-cyan-300/35"
+                          }`}
+                        >
+                          <p className="truncate text-xs font-semibold text-slate-100">{item.label}</p>
+                          <p className="text-[11px] text-slate-400">{new Date(item.timestamp).toLocaleString()}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    My Repositories
+                  </p>
+                  <div className="space-y-1">
+                    {repoLoading && (
+                      <div className="rounded-md border border-slate-700/50 bg-slate-950/60 px-2.5 py-2 text-xs text-slate-300">
+                        Loading repositories...
+                      </div>
+                    )}
+                    {!repoLoading && filteredRepos.length === 0 && (
+                      <div className="rounded-md border border-slate-700/50 bg-slate-950/60 px-2.5 py-2 text-xs text-slate-400">
+                        No repositories found.
+                      </div>
+                    )}
+                    {!repoLoading &&
+                      filteredRepos.map((repo) => {
+                        const url = `https://github.com/${repo.fullName}`;
+                        const selected = selectedProjectUrl === url;
+                        return (
+                          <button
+                            key={repo.id}
+                            type="button"
+                            onClick={() => selectProject(url)}
+                            className={`w-full rounded-md border px-2.5 py-2 text-left transition ${
+                              selected
+                                ? "border-cyan-300/60 bg-cyan-900/20"
+                                : "border-slate-700/60 bg-slate-950/60 hover:border-cyan-300/35"
+                            }`}
+                          >
+                            <p className="truncate text-xs font-semibold text-slate-100">{repo.fullName}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {repo.private ? "Private" : "Public"} · {repo.role}
+                            </p>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+
+              {repoError && <p className="mt-2 text-xs text-rose-300">{repoError}</p>}
+            </section>
+
+            <section className="min-h-0 overflow-hidden rounded-2xl border border-slate-600/45 bg-slate-950/75 p-4 backdrop-blur-xl">
+              {!selectedProjectUrl && (
+                <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 p-4 text-sm text-slate-300">
+                  Select a repository on the left to preview details and analyze.
+                </div>
+              )}
+
+              {selectedProjectUrl && (
+                <div className="flex h-full min-h-0 flex-col">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.13em] text-cyan-200">Repository</p>
+                    <h2 className="mt-1 text-2xl font-semibold text-white">
+                      {selectedProjectFullName || selectedProjectUrl.replace(/^https?:\/\/github\.com\//i, "")}
+                    </h2>
+                    <a
+                      href={selectedProjectUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-xs text-cyan-200 hover:text-cyan-100"
+                    >
+                      Open on GitHub
+                    </a>
+                  </div>
+
+                  <div className="sticky top-0 z-10 mt-3 border-y border-slate-700/50 bg-slate-950/90 py-3 backdrop-blur-sm">
+                    <button
+                      type="button"
+                      onClick={() => openCityFromRepo(selectedProjectUrl)}
+                      className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                    >
+                      Analyze This Repository
+                    </button>
+                  </div>
+
+                  <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+
+                  {projectDetailsLoading && (
+                    <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 p-3 text-sm text-slate-300">
+                      Loading repository details...
+                    </div>
+                  )}
+
+                  {projectDetailsError && (
+                    <div className="rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-sm text-red-200">
+                      {projectDetailsError}
+                    </div>
+                  )}
+
+                  {projectDetails && !projectDetailsLoading && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Files</p>
+                        <p className="mt-1 text-xl font-semibold text-white">
+                          {projectDetails.repo.fileCount ?? "Unknown"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Size</p>
+                        <p className="mt-1 text-xl font-semibold text-white">{projectDetails.repo.sizeKb} KB</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Visibility</p>
+                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.visibility}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Language</p>
+                        <p className="mt-1 text-base font-semibold text-white">
+                          {projectDetails.repo.language || "Unknown"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Stars / Watchers</p>
+                        <p className="mt-1 text-base font-semibold text-white">
+                          {projectDetails.repo.stars} / {projectDetails.repo.watchers}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Open Issues</p>
+                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.openIssues}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Default Branch</p>
+                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.defaultBranch}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">License</p>
+                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.license || "None"}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Created</p>
+                        <p className="mt-1 text-sm font-semibold text-white">
+                          {new Date(projectDetails.repo.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {projectDetails?.repo.description && (
+                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Description</p>
+                      <p className="mt-1 text-sm text-slate-200">{projectDetails.repo.description}</p>
+                    </div>
+                  )}
+
+                  {(projectDetails?.repo.topics?.length ?? 0) > 0 && (
+                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Topics</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(projectDetails?.repo.topics ?? []).slice(0, 12).map((topic) => (
+                          <span
+                            key={topic}
+                            className="rounded-full border border-cyan-300/30 bg-cyan-900/20 px-2 py-0.5 text-[11px] text-cyan-100"
+                          >
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {projectDetails?.lastCommit && (
+                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Last Commit</p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {projectDetails.lastCommit.message.split("\n")[0]}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {projectDetails.lastCommit.author}
+                        {projectDetails.lastCommit.date
+                          ? ` · ${new Date(projectDetails.lastCommit.date).toLocaleString()}`
+                          : ""}
+                      </p>
+                    </div>
+                  )}
+
+                  {(projectDetails?.contributors?.length ?? 0) > 0 && (
+                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Top Contributors</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {(projectDetails?.contributors ?? []).map((contributor) => (
+                          <a
+                            key={contributor.login}
+                            href={contributor.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-slate-700/55 bg-slate-950/50 px-2 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/45"
+                          >
+                            <div className="font-semibold">{contributor.login}</div>
+                            <div className="text-slate-400">{contributor.contributions} commits</div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  </div>
+                </div>
+              )}
             </section>
           </div>
         </div>
@@ -583,6 +1163,14 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {status === "authenticated" && (
+              <button
+                onClick={() => setShowCitySelector(true)}
+                className="rounded-lg border border-cyan-300/45 bg-cyan-950/35 px-3 py-1.5 text-sm text-cyan-100 transition hover:border-cyan-200/75 hover:bg-cyan-900/40"
+              >
+                Select the City
+              </button>
+            )}
             <button
               onClick={() => setShowOnboarding(true)}
               className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
@@ -655,6 +1243,148 @@ export default function Home() {
           setHighlightedBuildings([]);
         }}
       />
+
+      {showCitySelector && status === "authenticated" && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[min(920px,92vw)] rounded-2xl border border-slate-600/60 bg-slate-950/95 p-5 shadow-[0_28px_70px_rgba(0,0,0,0.6)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Select the City</h3>
+                <p className="text-xs text-slate-400">Switch projects from history or your GitHub repos.</p>
+              </div>
+              <button
+                onClick={() => setShowCitySelector(false)}
+                className="rounded-md border border-slate-500/40 px-2 py-1 text-xs text-slate-300 transition hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+              <input
+                type="text"
+                value={repoSearch}
+                onChange={(e) => setRepoSearch(e.target.value)}
+                placeholder="Search history and repos"
+                className="w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setRepoLoading(true);
+                  setRepoError(null);
+                  try {
+                    const res = await fetch("/api/github/repos", { method: "GET" });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      throw new Error(data.error || "Failed to reload repositories");
+                    }
+                    setRepos((data.repos || []) as UserRepo[]);
+                  } catch (err) {
+                    setRepoError(
+                      err instanceof Error ? err.message : "Failed to reload repositories"
+                    );
+                  } finally {
+                    setRepoLoading(false);
+                  }
+                }}
+                className="rounded-lg border border-slate-500/45 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              >
+                Refresh Repos
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
+                <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-slate-300 uppercase">History</p>
+                <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+                  {filteredHistory.length === 0 && (
+                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
+                      No city history yet.
+                    </div>
+                  )}
+
+                  {filteredHistory.map((item) => (
+                    <div
+                      key={`${item.repoUrl}-${item.timestamp}`}
+                      className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openCityFromRepo(item.repoUrl)}
+                          className="min-w-0 text-left"
+                        >
+                          <p className="truncate text-xs font-semibold text-slate-100">{item.label}</p>
+                          <p className="text-[11px] text-slate-400">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </p>
+                        </button>
+                        <a
+                          href={item.repoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                        >
+                          Open
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-3">
+                <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-slate-300 uppercase">My Repositories</p>
+                <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+                  {repoLoading && (
+                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
+                      Loading repositories...
+                    </div>
+                  )}
+
+                  {!repoLoading && filteredRepos.length === 0 && (
+                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
+                      No repositories found.
+                    </div>
+                  )}
+
+                  {!repoLoading &&
+                    filteredRepos.map((repo) => (
+                      <div
+                        key={`selector-${repo.id}`}
+                        className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openCityFromRepo(`https://github.com/${repo.fullName}`)}
+                            className="min-w-0 text-left"
+                          >
+                            <p className="truncate text-xs font-semibold text-slate-100">{repo.fullName}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {repo.private ? "Private" : "Public"} · {repo.role}
+                            </p>
+                          </button>
+                          <a
+                            href={repo.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-slate-500/35 px-2 py-1 text-[11px] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                          >
+                            Open
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {repoError && <p className="mt-3 text-xs text-rose-300">{repoError}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Question bar */}
       {city && (

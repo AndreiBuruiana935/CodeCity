@@ -19,7 +19,8 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } {
 }
 
 function getToken(userToken?: string): string | undefined {
-  return userToken || process.env.GITHUB_TOKEN || undefined;
+  // Enforce per-user auth context instead of using a shared server token.
+  return userToken || undefined;
 }
 
 function makeHeaders(token?: string): Record<string, string> {
@@ -37,7 +38,23 @@ async function fetchWithRetry(
   retries = 2
 ): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, { headers });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let res: Response;
+    try {
+      res = await fetch(url, { headers, signal: controller.signal });
+    } catch (err) {
+      clearTimeout(timeout);
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      if (isAbort && attempt < retries) {
+        continue;
+      }
+      if (isAbort) {
+        throw new Error("GitHub API request timed out.");
+      }
+      throw err;
+    }
+    clearTimeout(timeout);
 
     if (res.status === 403) {
       const remaining = res.headers.get("x-ratelimit-remaining");
