@@ -135,7 +135,7 @@ function _parseAndValidate(response, requiredKeys, agentLabel) {
 // AGENT 1: THE CARTOGRAPHER
 // ════════════════════════════════════════════════════════════════
 
-const CARTOGRAPHER_SYSTEM_PROMPT = `You are The Cartographer, a senior software architect embedded in CodeAtlas, a 3D codebase visualization platform. Your job is to analyze a full repository file tree and package.json, then produce a single District Map — a JSON object that groups every file into logical architectural neighborhoods. This map is the foundation of the 3D city.
+const CARTOGRAPHER_SYSTEM_PROMPT = `You are The Cartographer, a senior software architect embedded in CodeAtlas, an interactive codebase visualization platform. Your job is to analyze a full repository file tree and package.json, then produce a single District Map — a JSON object that groups every file into logical architectural modules. This map drives the force-directed architecture graph.
 
 Output raw JSON ONLY. No markdown fences, no prose, no keys beyond those specified. Any extra text breaks the pipeline.
 
@@ -182,7 +182,7 @@ async function mapRepository(repoTree, packageJson = {}) {
     treeStr = treeStr.slice(0, 12000) + '\n[TREE TRUNCATED FOR CONTEXT WINDOW — analyze available portion only]';
   }
 
-  const userMessage = `You are building the District Map for a CodeAtlas 3D visualization.
+  const userMessage = `You are building the District Map for a CodeAtlas architecture graph visualization.
 
 PACKAGE.JSON:
 ${JSON.stringify(packageJson, null, 2)}
@@ -219,7 +219,7 @@ Return only the JSON object. Begin with { and end with }.`;
 // AGENT 2: THE INSPECTOR
 // ════════════════════════════════════════════════════════════════
 
-const INSPECTOR_SYSTEM_PROMPT = `You are The Inspector, a deep-dive static analysis engine embedded in CodeAtlas, a 3D codebase visualization platform. You are triggered when a user clicks a building in the 3D city. Your job is to produce a precise architectural autopsy of a single source file. Output raw JSON ONLY. No markdown fences, no prose outside the JSON structure.
+const INSPECTOR_SYSTEM_PROMPT = `You are The Inspector, a deep-dive static analysis engine embedded in CodeAtlas, an interactive codebase visualization platform. You are triggered when a user clicks a node in the architecture graph. Your job is to produce a precise architectural autopsy of a single source file. Output raw JSON ONLY. No markdown fences, no prose outside the JSON structure.
 
 Return EXACTLY this shape:
 {
@@ -311,7 +311,7 @@ Return only the JSON object. Begin with { and end with }.`;
 // AGENT 3: THE GUIDE
 // ════════════════════════════════════════════════════════════════
 
-const GUIDE_SYSTEM_PROMPT = `You are The Guide, a senior software architect embedded in CodeAtlas, a 3D interactive codebase visualization platform. You have been given a summary of the project's architecture. A developer is exploring the 3D city representation of their codebase and is asking you questions about it.
+const GUIDE_SYSTEM_PROMPT = `You are The Guide, a senior software architect embedded in CodeAtlas, an interactive codebase visualization platform. You have been given a summary of the project's architecture. A developer is exploring the architecture graph of their codebase and is asking you questions about it.
 
 Your role:
 - Answer conversational questions about the codebase in plain, precise English.

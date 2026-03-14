@@ -27,7 +27,7 @@ export default function SidePanel({
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 rounded-full bg-cyan-300" />
               <span className="text-xs font-semibold tracking-[0.12em] text-cyan-200 uppercase">
-                District
+                Module
               </span>
             </div>
             <button
@@ -40,24 +40,24 @@ export default function SidePanel({
           <h2 className="mt-2 wrap-break-word font-mono text-sm text-slate-200">
             {districtDetails.name}
           </h2>
-          <p className="mt-1 text-xs text-slate-400">Neighborhood: {districtDetails.neighborhood}</p>
+          <p className="mt-1 text-xs text-slate-400">Group: {districtDetails.neighborhood}</p>
         </div>
 
         <div className="space-y-5 p-5">
           <section className="rounded-2xl border border-slate-700/60 bg-slate-900/55 p-4">
             <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
-              District Overview
+              Module Overview
             </h3>
             <p className="text-sm leading-relaxed text-slate-300">{districtDetails.description}</p>
           </section>
 
           <section className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
-              <div className="text-xs text-slate-400">Buildings</div>
+              <div className="text-xs text-slate-400">Files</div>
               <div className="text-lg font-bold text-white">{districtDetails.buildingCount}</div>
             </div>
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">
-              <div className="text-xs text-slate-400">Subdistricts</div>
+              <div className="text-xs text-slate-400">Submodules</div>
               <div className="text-lg font-bold text-white">{districtDetails.subdistrictCount}</div>
             </div>
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/55 p-3">

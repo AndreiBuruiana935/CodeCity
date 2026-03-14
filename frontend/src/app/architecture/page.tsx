@@ -66,7 +66,7 @@ export default function ArchitecturePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: prompt,
-          context: `The user is exploring the 3D architecture map of "${city?.city.name || "a repository"}". They selected the "${selected.label}" node in the ${selected.layer} layer which has ${selected.connectionCount} connections. Explain its role.`,
+          context: `The user is exploring the architecture graph of "${city?.city.name || "a repository"}". They selected the "${selected.label}" node in the ${selected.layer} layer which has ${selected.connectionCount} connections. Explain its role.`,
           history: [],
         }),
       });
@@ -91,7 +91,7 @@ export default function ArchitecturePage() {
           </div>
         </div>
         <h2 className="mb-2 text-xl font-semibold text-white">
-          Building your architecture map...
+          Building your architecture graph...
         </h2>
         <p className="text-sm text-gray-400">{loadingProgress}</p>
         <p className="mt-4 text-xs text-gray-600">

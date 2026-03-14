@@ -135,7 +135,7 @@ export default function QuestionBar({
         <div className="flex items-start justify-between border-b border-slate-700/50 px-4 py-3">
           <div>
             <div className="text-xs font-semibold tracking-[0.14em] text-cyan-200 uppercase">
-              Code City Assistant
+              CodeAtlas Assistant
             </div>
             <div className="mt-1 text-xs text-slate-400">
               {city.city.name}
@@ -161,7 +161,7 @@ export default function QuestionBar({
               }`}
             >
               <div className="mb-1 text-[10px] font-semibold tracking-wide uppercase opacity-70">
-                {message.role === "user" ? "You" : "Code City"}
+                {message.role === "user" ? "You" : "CodeAtlas"}
               </div>
               <div className="whitespace-pre-wrap">{message.text}</div>
             </div>
@@ -169,7 +169,7 @@ export default function QuestionBar({
           {loading && (
             <div className="mr-6 rounded-xl border border-slate-700/60 bg-slate-900/75 px-3 py-2 text-sm text-slate-300">
               <div className="mb-1 text-[10px] font-semibold tracking-wide uppercase opacity-70">
-                Code City
+                CodeAtlas
               </div>
               Thinking...
             </div>

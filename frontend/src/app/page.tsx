@@ -40,7 +40,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("codecity.repoHistory");
+      const raw = window.localStorage.getItem("codeatlas.repoHistory");
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) setCityHistory(parsed.slice(0, 12));
@@ -112,11 +112,11 @@ export default function LandingPage() {
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 pb-10 pt-8 md:px-10 lg:px-14">
         <div className="animate-rise-in flex items-center justify-between">
           <div className="animate-fluid-gradient bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text pb-1 text-5xl font-extrabold leading-[1.12] tracking-tight text-transparent sm:text-6xl lg:text-7xl">
-            Code City
+            CodeAtlas
           </div>
           <div className="flex items-center gap-3">
             <a
-              href="https://github.com/settings/tokens/new?scopes=repo&description=CodeCity"
+              href="https://github.com/settings/tokens/new?scopes=repo&description=CodeAtlas"
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-lg border border-cyan-300/35 bg-slate-900/65 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-slate-900"
@@ -141,19 +141,19 @@ export default function LandingPage() {
               Understand architecture in minutes
             </p>
             <h1 className="max-w-3xl text-5xl font-bold leading-[1.02] tracking-tight text-white sm:text-6xl lg:text-7xl">
-              Turn any repo into a
+              Turn any repo into an
               <span className="animate-fluid-gradient bg-linear-to-r from-cyan-300 via-blue-300 to-emerald-300 bg-clip-text text-transparent">
-                {" "}living code city
+                {" "}interactive architecture graph
               </span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
-              Visualize folders as districts and files as towers so you can find hotspots fast.
+              Visualize files as nodes and dependencies as edges in a force-directed graph — spot hotspots and clusters instantly.
             </p>
 
             <div className="mt-8 grid max-w-lg gap-3 sm:grid-cols-2">
               {[
-                { label: "3D Map", value: "District-based layout" },
-                { label: "Hotspots", value: "Risk-first navigation" },
+                { label: "Graph View", value: "Force-directed node layout" },
+                { label: "Hotspots", value: "Risk-colored nodes at a glance" },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-slate-500/20 bg-slate-900/50 p-4 backdrop-blur-md">
                   <p className="text-[11px] font-semibold tracking-[0.16em] text-cyan-200/85 uppercase">{item.label}</p>
@@ -166,7 +166,7 @@ export default function LandingPage() {
           <section className="animate-rise-in-late">
             <div className="relative rounded-3xl border border-slate-300/20 bg-slate-950/72 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-7">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white sm:text-2xl">Start a New City</h2>
+                <h2 className="text-xl font-semibold text-white sm:text-2xl">Explore a Repository</h2>
               </div>
 
               <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">

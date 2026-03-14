@@ -26,7 +26,7 @@ function getToken(userToken?: string): string | undefined {
 function makeHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
-    "User-Agent": "CodeCity-App",
+    "User-Agent": "CodeAtlas-App",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;

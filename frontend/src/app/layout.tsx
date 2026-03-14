@@ -4,9 +4,9 @@ import AuthProvider from "@/components/AuthProvider";
 import { AppProvider } from "@/components/AppContext";
 
 export const metadata: Metadata = {
-  title: "CodeCity",
+  title: "CodeAtlas",
   description:
-    "Transform any GitHub repository into a living, interactive city where architecture becomes geography.",
+    "Transform any GitHub repository into an interactive architecture graph that reveals structure, risk, and dependencies at a glance.",
 };
 
 export default function RootLayout({

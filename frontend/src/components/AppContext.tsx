@@ -100,7 +100,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("codecity.repoHistory");
+      const raw = window.localStorage.getItem("codeatlas.repoHistory");
       if (!raw) return;
       const parsed = JSON.parse(raw) as CityHistoryItem[];
       if (Array.isArray(parsed)) {
@@ -122,7 +122,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const persistHistory = useCallback((nextHistory: CityHistoryItem[]) => {
     setCityHistory(nextHistory);
     try {
-      window.localStorage.setItem("codecity.repoHistory", JSON.stringify(nextHistory));
+      window.localStorage.setItem("codeatlas.repoHistory", JSON.stringify(nextHistory));
     } catch {
       // Ignore
     }

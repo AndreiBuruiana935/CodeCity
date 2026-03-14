@@ -28,7 +28,7 @@ export interface ArchSelection {
 
 const STATIC_ND: NodeDef[] = [
   // ── Database layer ──
-  { id: "ctyp", lb: "City Types",        l: "db",  x: -5,    z: -1.5 },
+  { id: "ctyp", lb: "Data Types",          l: "db",  x: -5,    z: -1.5 },
   { id: "nxtd", lb: "NextAuth Types",    l: "db",  x: -1.5,  z: -3   },
   { id: "lcst", lb: "LocalStorage",      l: "db",  x: 2.5,   z: 0    },
   { id: "bcch", lb: "LLM Cache",         l: "db",  x: 6,     z: -1.5 },
@@ -38,7 +38,7 @@ const STATIC_ND: NodeDef[] = [
   { id: "insp", lb: "Inspector",          l: "be",  x: -3,    z: -2   },
   { id: "guid", lb: "Guide Agent",        l: "be",  x: 0,     z: 2.5  },
   { id: "anlz", lb: "Static Analyzer",    l: "be",  x: 3,     z: -1   },
-  { id: "ctgn", lb: "City Generator",     l: "be",  x: -1,    z: -0.5 },
+  { id: "ctgn", lb: "Graph Generator",    l: "be",  x: -1,    z: -0.5 },
   { id: "ghub", lb: "GitHub Client",      l: "be",  x: 5.5,   z: 1    },
   { id: "aism", lb: "AI Summarizer",      l: "be",  x: 6.5,   z: -2.5 },
   { id: "auth", lb: "Auth Config",        l: "be",  x: -5.5,  z: -3   },
@@ -60,7 +60,7 @@ const STATIC_ND: NodeDef[] = [
   // ── Frontend layer ──
   { id: "pLnd", lb: "Landing Page",        l: "fe", x: -5.5,  z: -1   },
   { id: "pPrj", lb: "Projects Page",       l: "fe", x: -2,    z: 2    },
-  { id: "pCty", lb: "City Page",           l: "fe", x: 2,     z: 0    },
+  { id: "pCty", lb: "Architecture Page",  l: "fe", x: 2,     z: 0    },
   { id: "cLay", lb: "Root Layout",         l: "fe", x: -7.5,  z: 0.5  },
   { id: "cCtx", lb: "AppContext",           l: "fe", x: -3.5,  z: -3   },
   { id: "cAPr", lb: "AuthProvider",         l: "fe", x: -7,    z: -2   },

@@ -26,7 +26,7 @@ export default function OnboardingOverlay({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-white text-xl font-bold">
-            Welcome to CodeCity
+            Welcome to CodeAtlas
           </h2>
           <button
             onClick={onClose}
