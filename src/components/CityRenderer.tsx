@@ -14,6 +14,7 @@ interface CityRendererProps {
   city: CitySchema;
   highlightedBuildings: string[];
   cameraTarget: string | null;
+  detailSelectionTarget: string | null;
   onBuildingClick: (building: Building) => void;
 }
 
@@ -200,12 +201,14 @@ function RoadMesh({
 // Camera controller
 function CameraController({
   target,
+  detailSelectionTarget,
   buildingPositions,
   buildingHeights,
   cityCenter,
   citySpan,
 }: {
   target: string | null;
+  detailSelectionTarget: string | null;
   buildingPositions: Map<string, [number, number, number]>;
   buildingHeights: Map<string, number>;
   cityCenter: [number, number, number];
@@ -275,11 +278,17 @@ function CameraController({
 
     if (target && buildingPositions.has(target)) {
       const pos = buildingPositions.get(target)!;
+      const isDetailSelection = detailSelectionTarget === target;
       const height = buildingHeights.get(target) ?? 2;
-      const targetVec = new THREE.Vector3(pos[0], Math.max(1.2, height * 0.45), pos[2]);
-      const distance = THREE.MathUtils.clamp(3.8 + height * 0.65, 4.8, 14.5);
+      const targetVec = isDetailSelection
+        ? new THREE.Vector3(pos[0], Math.max(1.2, height * 0.45), pos[2])
+        : new THREE.Vector3(pos[0], 1.6, pos[2]);
+      const distance = isDetailSelection
+        ? THREE.MathUtils.clamp(3.8 + height * 0.65, 4.8, 14.5)
+        : 4.2;
+      const cameraY = isDetailSelection ? Math.max(height * 1.15, 5.4) : Math.max(4.6, pos[1] + 6.3);
       camera.position.lerp(
-        new THREE.Vector3(pos[0] + distance, Math.max(height * 1.15, 5.4), pos[2] + distance),
+        new THREE.Vector3(pos[0] + distance, cameraY, pos[2] + distance),
         Math.min(delta * 2.8, 0.12)
       );
       controlsRef.current.target.lerp(targetVec, Math.min(delta * 2.8, 0.12));
@@ -312,8 +321,8 @@ function CameraController({
     const move = new THREE.Vector3();
     if (keyState.current.w) move.add(forward);
     if (keyState.current.s) move.addScaledVector(forward, -1);
-    if (keyState.current.a) move.add(right);
-    if (keyState.current.d) move.addScaledVector(right, -1);
+    if (keyState.current.a) move.addScaledVector(right, -1);
+    if (keyState.current.d) move.add(right);
 
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(step);
@@ -324,10 +333,10 @@ function CameraController({
     const lift = (keyState.current.e ? 1 : 0) - (keyState.current.q ? 1 : 0);
     if (lift !== 0) {
       const deltaY = lift * step * 0.85;
-      camera.position.y = THREE.MathUtils.clamp(camera.position.y + deltaY, 1.8, 42);
+      camera.position.y = THREE.MathUtils.clamp(camera.position.y + deltaY, 0.06, 42);
       controlsRef.current.target.y = THREE.MathUtils.clamp(
         controlsRef.current.target.y + deltaY,
-        0.6,
+        -0.2,
         30
       );
     }
@@ -351,6 +360,7 @@ function CityScene({
   city,
   highlightedBuildings,
   cameraTarget,
+  detailSelectionTarget,
   onBuildingClick,
 }: CityRendererProps) {
   const totalBuildingCount = useMemo(
@@ -499,6 +509,7 @@ function CityScene({
 
       <CameraController
         target={cameraTarget}
+        detailSelectionTarget={detailSelectionTarget}
         buildingPositions={buildingPositions}
         buildingHeights={buildingHeights}
         cityCenter={sceneBounds.center}

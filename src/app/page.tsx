@@ -295,6 +295,7 @@ export default function Home() {
             city={city}
             highlightedBuildings={highlightedBuildings}
             cameraTarget={cameraTarget}
+            detailSelectionTarget={selectedBuilding?.id || null}
             onBuildingClick={handleBuildingClick}
           />
         </Suspense>
@@ -369,6 +370,16 @@ export default function Home() {
       {/* Side panel */}
       <SidePanel
         building={selectedBuilding}
+        onViewCode={(building) => {
+          if (!city?.city.name?.includes("/")) return;
+          const [owner, repo] = city.city.name.split("/");
+          const encodedPath = building.path
+            .split("/")
+            .map((part) => encodeURIComponent(part))
+            .join("/");
+          const url = `https://github.com/${owner}/${repo}/blob/main/${encodedPath}`;
+          window.open(url, "_blank", "noopener,noreferrer");
+        }}
         onClose={() => {
           setSelectedBuilding(null);
           setCameraTarget(null);

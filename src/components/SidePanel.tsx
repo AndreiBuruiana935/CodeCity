@@ -4,10 +4,11 @@ import { Building } from "@/types/city";
 
 interface SidePanelProps {
   building: Building | null;
+  onViewCode?: (building: Building) => void;
   onClose: () => void;
 }
 
-export default function SidePanel({ building, onClose }: SidePanelProps) {
+export default function SidePanel({ building, onViewCode, onClose }: SidePanelProps) {
   if (!building) return null;
 
   const maintainability =
@@ -73,6 +74,15 @@ export default function SidePanel({ building, onClose }: SidePanelProps) {
           <p className="text-sm leading-relaxed text-slate-300">
             {building.aiSummary || "Analysis pending..."}
           </p>
+
+          <div className="mt-4">
+            <button
+              onClick={() => onViewCode?.(building)}
+              className="rounded-lg border border-cyan-300/35 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-cyan-100 transition hover:border-cyan-200/70 hover:bg-cyan-400/15"
+            >
+              View Code
+            </button>
+          </div>
         </section>
 
         {/* Stats grid */}
