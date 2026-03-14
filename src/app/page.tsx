@@ -634,7 +634,7 @@ export default function Home() {
                     e.preventDefault();
                     handleAnalyze();
                   }}
-                  className="space-y-4"
+                  className="flex min-h-[355px] flex-col space-y-4"
                 >
                   {entryMode === "guest" && (
                     <>
@@ -672,39 +672,87 @@ export default function Home() {
                   )}
 
                   {entryMode === "github" && status !== "authenticated" && (
-                    <div className="rounded-xl border border-cyan-300/30 bg-cyan-900/15 p-4 text-sm text-cyan-100">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="max-w-md">
-                          <p>Sign in with GitHub to authorize this app and access your repositories.</p>
-                          {githubAuthReady === false && (
-                            <div className="mt-2 text-xs text-amber-200">
-                              OAuth config missing. Update .env.local and restart the app.
-                            </div>
-                          )}
+                    <div className="flex h-full flex-1 flex-col justify-between gap-3">
+                      <div className="rounded-xl border border-cyan-300/30 bg-cyan-900/15 p-4 text-sm text-cyan-100">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="max-w-md">
+                            <p className="font-medium">Sign in with GitHub to authorize this app and access your repositories.</p>
+                            {githubAuthReady === false && (
+                              <div className="mt-2 text-xs text-amber-200">
+                                OAuth config missing. Update .env.local and restart the app.
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleGitHubSignIn();
+                            }}
+                            className="shrink-0 rounded-lg border border-cyan-200/45 bg-cyan-500/20 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-100/80 hover:bg-cyan-500/30"
+                          >
+                            Continue with GitHub
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleGitHubSignIn();
-                          }}
-                          className="shrink-0 rounded-lg border border-cyan-200/45 bg-cyan-500/20 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-100/80 hover:bg-cyan-500/30"
-                        >
-                          Continue with GitHub
-                        </button>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 1</p>
+                          <p className="mt-1 text-xs text-slate-200">Grant access through GitHub OAuth.</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 2</p>
+                          <p className="mt-1 text-xs text-slate-200">Open Projects Workspace and pick a repository.</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 3</p>
+                          <p className="mt-1 text-xs text-slate-200">Preview repo details and analyze to build the city.</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3 text-xs text-slate-300">
+                          Browse your own, shared, or any repository in Projects Workspace.
+                        </div>
+
+                        <div className="text-xs text-slate-400">
+                          Prefer manual mode? Switch to Guest to paste any repository URL directly.
+                        </div>
                       </div>
                     </div>
                   )}
 
                   {entryMode === "github" && status === "authenticated" && (
-                    <div className="rounded-xl border border-emerald-300/35 bg-emerald-900/15 p-4 text-sm text-emerald-100">
-                      Connected as {session?.user?.name || session?.user?.email || "GitHub user"}. Open your projects workspace to browse repositories and analyze a city.
-                      <button
-                        type="button"
-                        onClick={() => setState("projects")}
-                        className="mt-3 rounded-lg border border-emerald-200/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:border-emerald-100/80 hover:bg-emerald-500/30"
-                      >
-                        Open Projects Workspace
-                      </button>
+                    <div className="flex flex-1 flex-col">
+                      <div className="rounded-xl border border-emerald-300/35 bg-emerald-900/15 p-4 text-sm text-emerald-100">
+                        Connected as {session?.user?.name || session?.user?.email || "GitHub user"}. Open your projects workspace to browse repositories and analyze a city.
+                        <button
+                          type="button"
+                          onClick={() => setState("projects")}
+                          className="mt-3 w-full rounded-lg border border-emerald-200/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:border-emerald-100/80 hover:bg-emerald-500/30"
+                        >
+                          Open Projects Workspace
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Repos Loaded</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{repos.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Recent Cities</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{cityHistory.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Access</p>
+                          <p className="mt-1 text-xs text-slate-200">Your own, shared, and external repos.</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-lg border border-slate-700/55 bg-slate-900/55 p-3 text-xs text-slate-300">
+                        Your session is active. Repository access uses your GitHub account permissions.
+                      </div>
                     </div>
                   )}
 
