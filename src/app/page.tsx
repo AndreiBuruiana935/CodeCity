@@ -1212,18 +1212,6 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setShowOnboarding(true)}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
-            >
-              Guide
-            </button>
-            <button
-              onClick={handleTourStart}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
-            >
-              Tour
-            </button>
-            <button
               onClick={() => {
                 setState("landing");
                 setCity(null);
@@ -1237,6 +1225,26 @@ export default function Home() {
             >
               New
             </button>
+            <button
+              onClick={handleTourStart}
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+            >
+              Tour
+            </button>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+            >
+              Guide
+            </button>
+            {status === "authenticated" && (
+              <button
+                onClick={() => signOut()}
+                className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       </div>
