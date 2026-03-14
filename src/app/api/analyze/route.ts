@@ -9,6 +9,20 @@ import {
 
 export const maxDuration = 120;
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const token = await getToken({
@@ -44,10 +58,13 @@ export async function POST(req: NextRequest) {
     if (aiEnabled) {
       try {
         // Generate AI summaries for buildings
-        const summaries = await summarizeBuildings(
-          allBuildings,
-          `${owner}/${repo}`,
-          city.city.language
+        const summaries = await withTimeout(
+          summarizeBuildings(
+            allBuildings,
+            `${owner}/${repo}`,
+            city.city.language
+          ),
+          12000
         );
         for (const district of city.city.districts) {
           for (const building of district.buildings) {
@@ -57,7 +74,10 @@ export async function POST(req: NextRequest) {
         }
 
         // Generate AI onboarding summary
-        const aiSummary = await generateAIOnboarding(city, allBuildings);
+        const aiSummary = await withTimeout(
+          generateAIOnboarding(city, allBuildings),
+          7000
+        );
         if (aiSummary) onboarding.plainEnglish = aiSummary;
       } catch (err) {
         console.error("AI enrichment failed, using static analysis:", err);
