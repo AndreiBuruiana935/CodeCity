@@ -170,7 +170,7 @@ function runLayerLayout(
   layerNodes: { id: string; fanIn: number }[],
   layerEdges: { source: string; target: string; weight: number }[],
 ): Map<string, { x: number; z: number }> {
-  const SPACING = 2.8; // minimum distance between node centers
+  const SPACING = 2.8; // distance between node centers
 
   const count = layerNodes.length;
   if (count === 0) return new Map();
@@ -620,17 +620,20 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         mat.opacity = (nid === hoveredId || directNeighbors.has(nid)) ? 1.0 : 0.15;
       });
     } else if (disclosure === "selected" && selectedId) {
-      const neighborhood = get2HopNeighborhood(selectedId);
-      s.tubeData.forEach(({ mesh, a, b, type, material, baseColor }) => {
-        const inNeighborhood = neighborhood.has(a) && neighborhood.has(b);
-        if ((type === "cross-layer" || type === "circular") && typePassesFilter(type)) {
+      // Only direct (1-hop) connections stay highlighted
+      const directNeighbors = new Set<string>([selectedId]);
+      s.tubeData.forEach(({ mesh, a, b, type, material }) => {
+        const isSelectedEdge = a === selectedId || b === selectedId;
+        if (isSelectedEdge && typePassesFilter(type)) {
           mesh.visible = true;
-          material.color.setHex(baseColor);
-          material.opacity = type === "circular" ? 0.50 : 0.55;
-        } else if (inNeighborhood && typePassesFilter(type)) {
-          mesh.visible = true;
-          material.color.setHex(baseColor);
-          material.opacity = 0.65;
+          if (a === selectedId) {
+            material.color.setHex(0x22d3ee); // cyan fan-out
+            directNeighbors.add(b);
+          } else {
+            material.color.setHex(0xf59e0b); // amber fan-in
+            directNeighbors.add(a);
+          }
+          material.opacity = 0.75;
         } else {
           mesh.visible = false;
         }
@@ -638,7 +641,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.ml.forEach((m) => {
         const nid = (m.userData as { id: string }).id;
         const mat = m.material as THREE.MeshStandardMaterial;
-        mat.opacity = neighborhood.has(nid) ? 1.0 : 0.08;
+        mat.opacity = directNeighbors.has(nid) ? 1.0 : 0.08;
       });
     }
 
@@ -830,7 +833,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, Math.max(500, extent * 4));
 
-    const gridExtent = Math.min(extent, 22);
+    const gridExtent = Math.max(extent, 14);
     const gridDivisions = Math.max(8, Math.round(gridExtent / 3));
 
     /* lights */
