@@ -60,7 +60,7 @@ export default function LandingPage() {
     setError(null);
     setSignInPending(true);
     try {
-      await signIn("github", { callbackUrl: "/" });
+      await signIn("github", { callbackUrl: "/projects" });
     } catch {
       setSignInPending(false);
       setError("Failed to start GitHub sign in. Please try again.");
@@ -119,7 +119,7 @@ export default function LandingPage() {
               href="https://github.com/settings/tokens/new?scopes=repo&description=CodeAtlas"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg border border-cyan-300/35 bg-slate-900/65 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-200/70 hover:bg-slate-900"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
             >
               Get Access Token
             </a>
@@ -127,9 +127,10 @@ export default function LandingPage() {
               <button
                 type="button"
                 onClick={() => signOut()}
-                className="rounded-lg border border-slate-500/40 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
               >
-                Sign out
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
+                Sign Out
               </button>
             )}
           </div>
@@ -206,7 +207,7 @@ export default function LandingPage() {
 
               <form
                 onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }}
-                className="flex min-h-88.75 flex-col space-y-4"
+                className="flex flex-col space-y-4"
               >
                 {entryMode === "guest" && (
                   <>
@@ -241,84 +242,46 @@ export default function LandingPage() {
                 )}
 
                 {entryMode === "github" && status !== "authenticated" && (
-                  <div className="flex h-full flex-1 flex-col justify-between gap-3">
-                    <div className="rounded-xl border border-cyan-300/30 bg-cyan-900/15 p-4 text-sm text-cyan-100">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="max-w-md">
-                          <p className="font-medium">Sign in with GitHub to authorize this app and access your repositories.</p>
-                          {githubAuthReady === false && (
-                            <div className="mt-2 text-xs text-amber-200">
-                              OAuth config missing. Update .env.local and restart the app.
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => { void handleGitHubSignIn(); }}
-                          className="shrink-0 rounded-lg border border-cyan-200/45 bg-cyan-500/20 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-100/80 hover:bg-cyan-500/30"
-                        >
-                          Continue with GitHub
-                        </button>
-                      </div>
+                  <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-900/20">
+                      <svg className="h-7 w-7 text-cyan-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
                     </div>
-
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 1</p>
-                        <p className="mt-1 text-xs text-slate-200">Grant access through GitHub OAuth.</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 2</p>
-                        <p className="mt-1 text-xs text-slate-200">Open Projects Workspace and pick a repository.</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Step 3</p>
-                        <p className="mt-1 text-xs text-slate-200">Preview repo details and analyze to build the city.</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3 text-xs text-slate-300">
-                        Browse your own, shared, or any repository in Projects Workspace.
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        Prefer manual mode? Switch to Guest to paste any repository URL directly.
-                      </div>
-                    </div>
+                    <p className="text-center text-sm text-slate-300">
+                      Connect your GitHub to explore any public repository or your own — and pick up where you left off on ones you've analyzed before.
+                    </p>
+                    {githubAuthReady === false && (
+                      <p className="text-center text-xs text-amber-200">
+                        OAuth config missing. Update .env.local and restart the app.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { void handleGitHubSignIn(); }}
+                      className="w-full rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                    >
+                      Continue with GitHub
+                    </button>
+                    <p className="text-center text-xs text-slate-500">
+                      Prefer manual mode? Switch to Guest above.
+                    </p>
                   </div>
                 )}
 
                 {entryMode === "github" && status === "authenticated" && (
-                  <div className="flex flex-1 flex-col">
-                    <div className="rounded-xl border border-emerald-300/35 bg-emerald-900/15 p-4 text-sm text-emerald-100">
-                      Connected as {session?.user?.name || session?.user?.email || "GitHub user"}. Open your projects workspace to browse repositories and analyze a city.
-                      <button
-                        type="button"
-                        onClick={() => router.push("/projects")}
-                        className="mt-3 w-full rounded-lg border border-emerald-200/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:border-emerald-100/80 hover:bg-emerald-500/30"
-                      >
-                        Open Projects Workspace
-                      </button>
+                  <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-300/30 bg-emerald-900/20">
+                      <svg className="h-7 w-7 text-emerald-200" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Repos Loaded</p>
-                        <p className="mt-1 text-lg font-semibold text-white">{repos.length}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Recent Cities</p>
-                        <p className="mt-1 text-lg font-semibold text-white">{cityHistory.length}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700/55 bg-slate-900/55 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Access</p>
-                        <p className="mt-1 text-xs text-slate-200">Your own, shared, and external repos.</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded-lg border border-slate-700/55 bg-slate-900/55 p-3 text-xs text-slate-300">
-                      Your session is active. Repository access uses your GitHub account permissions.
-                    </div>
+                    <p className="text-center text-sm text-slate-200">
+                      Signed in as <span className="font-semibold text-emerald-200">{session?.user?.name || session?.user?.email || "GitHub user"}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/projects")}
+                      className="w-full rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                    >
+                      Open Projects Workspace
+                    </button>
                   </div>
                 )}
 

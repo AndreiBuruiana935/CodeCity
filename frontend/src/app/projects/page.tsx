@@ -201,29 +201,36 @@ export default function ProjectsPage() {
     <div className="relative h-screen overflow-hidden bg-[#070d17] text-slate-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(80,200,255,0.2),transparent_42%),radial-gradient(circle_at_84%_10%,rgba(64,255,192,0.15),transparent_38%)]" />
       <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col px-6 py-8 md:px-10 lg:px-14">
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-bold text-transparent">
+        <div className="mb-5 flex items-center justify-between border-b border-slate-700/40 pb-4">
+          <div className="flex items-center gap-4">
+            <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent sm:text-4xl">
               Projects Workspace
             </h1>
-            <p className="mt-1 text-sm text-slate-300">
-              Signed in as {session?.user?.name || session?.user?.email || "GitHub user"}
-            </p>
+            <div className="hidden items-center gap-2 rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-1.5 sm:inline-flex">
+              {session?.user?.image && (
+                <img src={session.user.image} alt="" className="h-6 w-6 rounded-full" />
+              )}
+              <span className="text-sm font-medium text-cyan-100">
+                {session?.user?.name || session?.user?.email || "GitHub user"}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="rounded-lg border border-slate-500/45 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
             >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
               Home
             </button>
             <button
               type="button"
               onClick={() => signOut()}
-              className="rounded-lg border border-slate-500/45 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
             >
-              Sign out
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
+              Sign Out
             </button>
           </div>
         </div>
@@ -455,18 +462,28 @@ export default function ProjectsPage() {
                           {projectDetails.repo.stars} / {projectDetails.repo.watchers}
                         </p>
                       </div>
-                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <a
+                        href={`${selectedProjectUrl}/issues`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3 transition hover:border-cyan-300/50"
+                      >
                         <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Open Issues</p>
-                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.openIssues}</p>
-                      </div>
+                        <p className="mt-1 text-base font-semibold text-cyan-100 underline decoration-cyan-300/40 underline-offset-2">{projectDetails.repo.openIssues}</p>
+                      </a>
                       <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
                         <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Default Branch</p>
                         <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.defaultBranch}</p>
                       </div>
-                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                      <a
+                        href={projectDetails.repo.license ? `${selectedProjectUrl}/blob/${projectDetails.repo.defaultBranch}/LICENSE` : `${selectedProjectUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3 transition hover:border-cyan-300/50"
+                      >
                         <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">License</p>
-                        <p className="mt-1 text-base font-semibold text-white">{projectDetails.repo.license || "None"}</p>
-                      </div>
+                        <p className="mt-1 text-base font-semibold text-cyan-100 underline decoration-cyan-300/40 underline-offset-2">{projectDetails.repo.license || "None"}</p>
+                      </a>
                       <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
                         <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Created</p>
                         <p className="mt-1 text-sm font-semibold text-white">
@@ -500,9 +517,14 @@ export default function ProjectsPage() {
                   )}
 
                   {projectDetails?.lastCommit && (
-                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/55 p-3">
+                    <a
+                      href={projectDetails.lastCommit.url || `${selectedProjectUrl}/commit/${projectDetails.lastCommit.sha}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded-lg border border-slate-700/60 bg-slate-900/55 p-3 transition hover:border-cyan-300/50"
+                    >
                       <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Last Commit</p>
-                      <p className="mt-1 text-sm font-semibold text-white">
+                      <p className="mt-1 text-sm font-semibold text-cyan-100 underline decoration-cyan-300/40 underline-offset-2">
                         {projectDetails.lastCommit.message.split("\n")[0]}
                       </p>
                       <p className="mt-1 text-xs text-slate-400">
@@ -511,7 +533,7 @@ export default function ProjectsPage() {
                           ? ` · ${new Date(projectDetails.lastCommit.date).toLocaleString()}`
                           : ""}
                       </p>
-                    </div>
+                    </a>
                   )}
 
                   {(projectDetails?.contributors?.length ?? 0) > 0 && (
