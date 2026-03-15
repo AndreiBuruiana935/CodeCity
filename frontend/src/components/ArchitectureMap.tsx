@@ -25,9 +25,18 @@ interface NodeDef {
   orphan?: boolean;
   circular?: boolean;
   colorLabel?: string;
+  aiSummary?: string;
+  testCoverage?: "covered" | "uncovered" | "unknown";
 }
 
-type Conn = [string, string];
+type ConnType = "import" | "cross-layer" | "circular" | "type-import";
+
+interface Conn {
+  a: string;
+  b: string;
+  type: ConnType;
+  weight: number;
+}
 
 export interface ArchSelection {
   id: string;
@@ -83,7 +92,7 @@ const STATIC_ND: NodeDef[] = [
   { id: "cTor", lb: "TourOverlay",          l: "fe", x: 1,     z: 3.5  },
 ];
 
-const STATIC_CO: Conn[] = [
+const STATIC_CO_RAW: [string, string][] = [
   // Frontend → API
   ["pLnd", "aCfg"],
   ["cCtx", "aAnl"],
@@ -139,6 +148,18 @@ const STATIC_CO: Conn[] = [
   ["cOnb", "ctyp"],
   ["cTor", "ctyp"],
 ];
+
+const STATIC_CO: Conn[] = STATIC_CO_RAW.map(([a, b]) => ({ a, b, type: "import", weight: 1 }));
+
+const CONNECTION_STYLE: Record<
+  ConnType,
+  { color: number; opacity: number; linewidth: number; dashed: boolean; dashSize?: number; gapSize?: number }
+> = {
+  "cross-layer": { color: 0x7f77dd, opacity: 0.34, linewidth: 2.5, dashed: false },
+  circular: { color: 0xdc2626, opacity: 0.55, linewidth: 1.5, dashed: true, dashSize: 0.42, gapSize: 0.24 },
+  "type-import": { color: 0x888780, opacity: 0.42, linewidth: 0.8, dashed: true, dashSize: 0.26, gapSize: 0.2 },
+  import: { color: 0x3d7acc, opacity: 0.24, linewidth: 1.2, dashed: false },
+};
 
 /* ------------------------------------------------------------------ */
 /*  DYNAMIC REPO → ARCHITECTURE DATA                                   */
@@ -199,14 +220,16 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
   const allBuildings = city.city.districts.flatMap((d) => d.buildings);
   const hotspotSet = new Set(city.city.hotspots ?? []);
   const entrySet = new Set(city.city.entryPoints ?? []);
+  const coveredSet = new Set(city.city.testCoverage?.covered ?? []);
+  const uncoveredSet = new Set(city.city.testCoverage?.uncovered ?? []);
 
   /* compute fan-in / fan-out from roads */
   const fanInMap: Record<string, number> = {};
   const fanOutMap: Record<string, number> = {};
   const pairSet = new Set<string>();
   for (const r of city.city.roads) {
-    fanOutMap[r.from] = (fanOutMap[r.from] || 0) + 1;
-    fanInMap[r.to] = (fanInMap[r.to] || 0) + 1;
+    fanOutMap[r.from] = (fanOutMap[r.from] || 0) + (r.weight || 1);
+    fanInMap[r.to] = (fanInMap[r.to] || 0) + (r.weight || 1);
     pairSet.add(`${r.from}::${r.to}`);
   }
 
@@ -222,6 +245,8 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
   const ND: NodeDef[] = allBuildings.map((b) => {
     const fi = fanInMap[b.id] || 0;
     const fo = fanOutMap[b.id] || 0;
+    const covered = coveredSet.has(b.id) || coveredSet.has(b.path) || coveredSet.has(b.filename);
+    const uncovered = uncoveredSet.has(b.id) || uncoveredSet.has(b.path) || uncoveredSet.has(b.filename);
     return {
       id: b.id,
       lb: b.filename,
@@ -238,6 +263,8 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
       orphan: fi === 0 && fo === 0,
       circular: circularIds.has(b.id),
       colorLabel: b.colorLabel,
+      aiSummary: b.aiSummary,
+      testCoverage: covered ? "covered" : uncovered ? "uncovered" : "unknown",
     };
   });
 
@@ -268,7 +295,12 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
   const nodeIds = new Set(ND.map((n) => n.id));
   const CO: Conn[] = city.city.roads
     .filter((r) => nodeIds.has(r.from) && nodeIds.has(r.to) && r.from !== r.to)
-    .map((r) => [r.from, r.to]);
+    .map((r) => ({
+      a: r.from,
+      b: r.to,
+      type: r.type,
+      weight: r.weight || 1,
+    }));
 
   return { ND, CO, extent: maxExtent };
 }
@@ -313,6 +345,20 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(["all"]));
   const [selData, setSelData] = useState<{ lb: string; lname: string; cnt: number } | null>(null);
   const [legendOpen, setLegendOpen] = useState(true);
+  const [showFlowOverlay, setShowFlowOverlay] = useState(false);
+  const [hoverCard, setHoverCard] = useState<{
+    x: number;
+    y: number;
+    filename: string;
+    layer: string;
+    layerColor: string;
+    summary: string;
+    fanIn: number;
+    fanOut: number;
+    risk: number;
+    loc: number;
+    readNext: string;
+  } | null>(null);
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -330,6 +376,38 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const ndRef = useRef(ND);
   ndRef.current = ND;
 
+  const strongestOutbound = useMemo(() => {
+    const byId = new Map<string, NodeDef>(ND.map((n) => [n.id, n]));
+    const out = new Map<string, string>();
+    ND.forEach((node) => {
+      const best = CO
+        .filter((c) => c.a === node.id)
+        .sort((x, y) => y.weight - x.weight)[0];
+      if (best) {
+        out.set(node.id, byId.get(best.b)?.lb || best.b);
+      }
+    });
+    return out;
+  }, [ND, CO]);
+
+  const flowOverlayRef = useRef<{
+    tubes: THREE.Mesh[];
+    tubeMaterials: THREE.MeshStandardMaterial[];
+    tubeTextures: THREE.Texture[];
+    tubeGeometries: THREE.BufferGeometry[];
+    sprites: THREE.Sprite[];
+    spriteMaterials: THREE.SpriteMaterial[];
+    spriteTextures: THREE.Texture[];
+  }>({
+    tubes: [],
+    tubeMaterials: [],
+    tubeTextures: [],
+    tubeGeometries: [],
+    sprites: [],
+    spriteMaterials: [],
+    spriteTextures: [],
+  });
+
   /* refs for mutable scene state (avoid re-renders inside rAF loop) */
   const sceneRef = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -338,7 +416,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     mm: Record<string, THREE.Mesh>;
     ml: THREE.Mesh[];
     ll: THREE.Line[];
-    cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string }[];
+    cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string; type: ConnType; weight: number }[];
     pts: { m: THREE.Mesh; curve: THREE.QuadraticBezierCurve3; t: number; s: number }[];
     layerLabels: { el: HTMLDivElement; pos: THREE.Vector3 }[];
     ph: number;
@@ -390,12 +468,12 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
     if (mesh) {
       const ud = mesh.userData as { id: string; lb: string; lname: string };
-      const connPairs = coRef.current.filter(([a, b]) => a === ud.id || b === ud.id);
+      const connPairs = coRef.current.filter((c) => c.a === ud.id || c.b === ud.id);
       const cnt = connPairs.length;
       setSelData({ lb: ud.lb, lname: ud.lname, cnt });
 
       // Build connected node labels
-      const connectedIds = connPairs.map(([a, b]) => (a === ud.id ? b : a));
+      const connectedIds = connPairs.map((c) => (c.a === ud.id ? c.b : c.a));
       const connectedLabels = connectedIds
         .map((cid) => ndRef.current.find((n) => n.id === cid)?.lb)
         .filter(Boolean) as string[];
@@ -409,18 +487,19 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       });
 
       s.ll.forEach((line) => {
-        const ld = line.userData as { a: string; b: string };
+        const ld = line.userData as { a: string; b: string; baseColor: number };
         const on = ld.a === ud.id || ld.b === ud.id;
-        (line.material as THREE.LineBasicMaterial).opacity = on ? 0.92 : 0.04;
-        (line.material as THREE.LineBasicMaterial).color.setHex(on ? 0x4af0d0 : 0x3d7acc);
+        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        mat.opacity = on ? 0.92 : 0.05;
+        mat.color.setHex(ld.baseColor);
       });
 
       s.ml.forEach((n) => {
         const nud = n.userData as { id: string };
         const isSel = n === mesh;
         const isAdj = coRef.current.some(
-          ([a, b]) =>
-            (a === ud.id && b === nud.id) || (b === ud.id && a === nud.id),
+          (c) =>
+            (c.a === ud.id && c.b === nud.id) || (c.b === ud.id && c.a === nud.id),
         );
         const op = isSel || isAdj ? 1 : 0.16;
         const mats = Array.isArray(n.material) ? n.material : [n.material];
@@ -436,8 +515,10 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       setSelData(null);
       onSelectRef.current?.(null);
       s.ll.forEach((line) => {
-        (line.material as THREE.LineBasicMaterial).opacity = 0.22;
-        (line.material as THREE.LineBasicMaterial).color.setHex(0x3d7acc);
+        const ld = line.userData as { baseColor: number; baseOpacity: number };
+        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        mat.opacity = ld.baseOpacity;
+        mat.color.setHex(ld.baseColor);
       });
       s.ml.forEach((n) => {
         const mats = Array.isArray(n.material) ? n.material : [n.material];
@@ -468,6 +549,69 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       applyFilter(controlledFilters);
     }
   }, [controlledFilters, applyFilter]);
+
+  const clearFlowOverlay = useCallback((scene?: THREE.Scene) => {
+    const f = flowOverlayRef.current;
+    if (scene) {
+      f.tubes.forEach((mesh) => scene.remove(mesh));
+      f.sprites.forEach((sprite) => scene.remove(sprite));
+    }
+    f.tubeGeometries.forEach((g) => g.dispose());
+    f.tubeMaterials.forEach((m) => m.dispose());
+    f.tubeTextures.forEach((t) => t.dispose());
+    f.spriteMaterials.forEach((m) => m.dispose());
+    f.spriteTextures.forEach((t) => t.dispose());
+    f.tubes = [];
+    f.tubeMaterials = [];
+    f.tubeTextures = [];
+    f.tubeGeometries = [];
+    f.sprites = [];
+    f.spriteMaterials = [];
+    f.spriteTextures = [];
+  }, []);
+
+  const projectHoverCard = useCallback(
+    (mesh: THREE.Mesh | null) => {
+      const s = sceneRef.current;
+      const container = containerRef.current;
+      if (!s || !container || !mesh) {
+        setHoverCard(null);
+        return;
+      }
+      const worldPos = new THREE.Vector3();
+      mesh.getWorldPosition(worldPos);
+      const projected = worldPos.clone().project(s.cam);
+      const x = (projected.x * 0.5 + 0.5) * s.W;
+      const y = (-projected.y * 0.5 + 0.5) * s.H;
+      const ud = mesh.userData as {
+        lb: string;
+        lname: string;
+        layerColor: number;
+        aiSummary?: string;
+        fanIn?: number;
+        fanOut?: number;
+        risk?: number;
+        loc?: number;
+        readNext?: string;
+      };
+      const summary = (ud.aiSummary || "No summary yet").trim();
+      const clippedSummary = summary.length > 100 ? `${summary.slice(0, 100)}...` : summary;
+      setHoverCard({
+        x,
+        y,
+        filename: ud.lb,
+        layer: ud.lname,
+        layerColor: `#${ud.layerColor.toString(16).padStart(6, "0")}`,
+        summary: clippedSummary || "No summary yet",
+        fanIn: ud.fanIn || 0,
+        fanOut: ud.fanOut || 0,
+        risk: ud.risk || 0,
+        loc: ud.loc || 0,
+        readNext: ud.readNext || "None",
+      });
+    },
+    [],
+  );
 
   /* ---- scene init ---- */
   useEffect(() => {
@@ -526,7 +670,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     });
 
     /* helper: create a canvas texture with text for a block face */
-    function makeTextTexture(text: string, faceW: number, faceH: number, hexColor: number): THREE.CanvasTexture {
+    function makeTextTexture(
+      text: string,
+      faceW: number,
+      faceH: number,
+      hexColor: number,
+      risk?: number,
+      loc?: number,
+    ): THREE.CanvasTexture {
       const baseRes = 256;
       const aspect = Math.max(faceW, 0.1) / Math.max(faceH, 0.1);
       const cW = Math.round(baseRes * Math.max(1, aspect));
@@ -547,14 +698,21 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       // text
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.textBaseline = "alphabetic";
       let fontSize = Math.floor(Math.min(cH * 0.32, cW * 0.18));
       ctx.font = `bold ${fontSize}px Arial, sans-serif`;
       while (ctx.measureText(text).width > cW * 0.88 && fontSize > 10) {
         fontSize--;
         ctx.font = `bold ${fontSize}px Arial, sans-serif`;
       }
-      ctx.fillText(text, cW / 2, cH / 2);
+      const mainY = cH * 0.52;
+      ctx.fillText(text, cW / 2, mainY);
+
+      const subText = `risk: ${Math.round(risk || 0)} | LOC: ${Math.round(loc || 0)}`;
+      const subSize = Math.max(10, Math.floor(fontSize * 0.6));
+      ctx.font = `500 ${subSize}px Arial, sans-serif`;
+      ctx.fillStyle = "rgba(225, 232, 255, 0.82)";
+      ctx.fillText(subText, cW / 2, mainY + subSize + 4);
       const tex = new THREE.CanvasTexture(cvs);
       tex.needsUpdate = true;
       return tex;
@@ -563,6 +721,10 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     /* nodes */
     const mm: Record<string, THREE.Mesh> = {};
     const ml: THREE.Mesh[] = [];
+    const markerMeshes: THREE.Mesh[] = [];
+    const markerMaterials: THREE.Material[] = [];
+    const markerGeometries: THREE.BufferGeometry[] = [];
+    const entryRingMaterials: THREE.MeshBasicMaterial[] = [];
 
     ND.forEach((n) => {
       const ly = LAYERS[n.l];
@@ -591,13 +753,13 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         emissiveIntensity = 0.35;
       }
 
-      const w = n.hotspot ? 1.35 : 1.05;
+      const w = Math.min(1.05 + (n.fanIn || 0) * 0.08, 2.2);
       const d = n.hotspot ? 0.82 : 0.62;
 
       /* create text textures for each face orientation */
-      const texFB = makeTextTexture(n.lb, w, h, nodeColor); // front & back (w × h)
-      const texLR = makeTextTexture(n.lb, d, h, nodeColor); // left & right (d × h)
-      const texTB = makeTextTexture(n.lb, w, d, nodeColor); // top & bottom (w × d)
+      const texFB = makeTextTexture(n.lb, w, h, nodeColor, n.risk, n.loc); // front & back (w × h)
+      const texLR = makeTextTexture(n.lb, d, h, nodeColor, n.risk, n.loc); // left & right (d × h)
+      const texTB = makeTextTexture(n.lb, w, d, nodeColor, n.risk, n.loc); // top & bottom (w × d)
 
       const matProps = {
         emissive: emissiveColor,
@@ -621,19 +783,60 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       const m = new THREE.Mesh(geo, materials);
       m.position.set(n.x, ly.y + h / 2, n.z);
       m.frustumCulled = false;
-      m.userData = { id: n.id, lb: n.lb, l: n.l, lname: ly.name, risk: n.risk, hotspot: n.hotspot, entryPoint: n.entryPoint, security: n.security, circular: n.circular, orphan: n.orphan };
+      m.userData = {
+        id: n.id,
+        lb: n.lb,
+        l: n.l,
+        lname: ly.name,
+        layerColor: ly.c,
+        risk: n.risk,
+        hotspot: n.hotspot,
+        entryPoint: n.entryPoint,
+        security: n.security,
+        circular: n.circular,
+        orphan: n.orphan,
+        fanIn: n.fanIn,
+        fanOut: n.fanOut,
+        loc: n.loc,
+        aiSummary: n.aiSummary,
+        readNext: strongestOutbound.get(n.id),
+      };
       scene.add(m);
       mm[n.id] = m;
       ml.push(m);
 
       /* entry point ring marker */
       if (n.entryPoint) {
-        const ringGeo = new THREE.RingGeometry(0.7, 0.85, 16);
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(n.x, ly.y + h + 0.08, n.z);
-        scene.add(ring);
+        const ringGeoA = new THREE.RingGeometry(0.72, 0.88, 24);
+        const ringMatA = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.62 });
+        const ringA = new THREE.Mesh(ringGeoA, ringMatA);
+        ringA.rotation.x = -Math.PI / 2;
+        ringA.position.set(n.x, ly.y + h + 0.08, n.z);
+        scene.add(ringA);
+
+        const ringGeoB = new THREE.RingGeometry(0.9, 1.06, 24);
+        const ringMatB = new THREE.MeshBasicMaterial({ color: 0x67e8f9, side: THREE.DoubleSide, transparent: true, opacity: 0.45 });
+        const ringB = new THREE.Mesh(ringGeoB, ringMatB);
+        ringB.rotation.x = -Math.PI / 2;
+        ringB.position.set(n.x, ly.y + h + 0.1, n.z);
+        scene.add(ringB);
+
+        entryRingMaterials.push(ringMatA, ringMatB);
+        markerMeshes.push(ringA, ringB);
+        markerMaterials.push(ringMatA, ringMatB);
+        markerGeometries.push(ringGeoA, ringGeoB);
+      }
+
+      /* test coverage marker */
+      if (n.testCoverage === "covered" || n.testCoverage === "uncovered") {
+        const dotGeo = new THREE.SphereGeometry(0.12, 10, 10);
+        const dotMat = new THREE.MeshBasicMaterial({ color: n.testCoverage === "covered" ? 0x4ade80 : 0xfbbf24 });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        dot.position.set(n.x + w / 2 - 0.08, ly.y + h - 0.1, n.z + d / 2 + 0.06);
+        scene.add(dot);
+        markerMeshes.push(dot);
+        markerMaterials.push(dotMat);
+        markerGeometries.push(dotGeo);
       }
 
       /* security shield marker */
@@ -643,14 +846,18 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         const shield = new THREE.Mesh(shieldGeo, shieldMat);
         shield.position.set(n.x + w / 2 + 0.2, ly.y + h, n.z);
         scene.add(shield);
+        markerMeshes.push(shield);
+        markerMaterials.push(shieldMat);
+        markerGeometries.push(shieldGeo);
       }
     });
 
     /* connections */
     const ll: THREE.Line[] = [];
-    const cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string }[] = [];
+    const cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string; type: ConnType; weight: number }[] = [];
 
-    CO.forEach(([a, b], i) => {
+    CO.forEach((conn, i) => {
+      const { a, b, type, weight } = conn;
       const ma = mm[a];
       const mb = mm[b];
       if (!ma || !mb) return;
@@ -662,18 +869,28 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         (pa.z + pb.z) / 2 + Math.cos(i * 1.71) * 2.2,
       );
       const curve = new THREE.QuadraticBezierCurve3(pa.clone(), ctrl, pb.clone());
-      cr.push({ curve, a, b });
+      cr.push({ curve, a, b, type, weight });
       const pts = curve.getPoints(30);
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
-      /* circular deps get red line, others default blue */
-      const isCircular = CO.some(([ca, cb]) => ca === b && cb === a);
-      const mat = new THREE.LineBasicMaterial({
-        color: isCircular ? 0xff4444 : 0x3d7acc,
-        transparent: true,
-        opacity: isCircular ? 0.45 : 0.22,
-      });
+      const style = CONNECTION_STYLE[type] || CONNECTION_STYLE.import;
+      const mat = style.dashed
+        ? new THREE.LineDashedMaterial({
+            color: style.color,
+            transparent: true,
+            opacity: style.opacity,
+            linewidth: style.linewidth,
+            dashSize: style.dashSize,
+            gapSize: style.gapSize,
+          })
+        : new THREE.LineBasicMaterial({
+            color: style.color,
+            transparent: true,
+            opacity: style.opacity,
+            linewidth: style.linewidth,
+          });
       const line = new THREE.Line(geo, mat);
-      line.userData = { a, b, circular: isCircular };
+      if (style.dashed) line.computeLineDistances();
+      line.userData = { a, b, type, weight, baseColor: style.color, baseOpacity: style.opacity };
       scene.add(line);
       ll.push(line);
     });
@@ -799,8 +1016,15 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       } else {
         const uv = getUV(e);
         if (uv[0] >= -1 && uv[0] <= 1 && uv[1] >= -1 && uv[1] <= 1) {
-          s.hov = pick(uv);
+          const hovered = pick(uv);
+          if (hovered !== s.hov) {
+            s.hov = hovered;
+            projectHoverCard(hovered);
+          }
           canvas!.style.cursor = s.hov ? "pointer" : "grab";
+        } else if (s.hov) {
+          s.hov = null;
+          projectHoverCard(null);
         }
       }
     }
@@ -897,6 +1121,16 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         p.m.position.copy(p.curve.getPoint(p.t));
       });
 
+      /* pulse entry rings */
+      for (let i = 0; i < entryRingMaterials.length; i++) {
+        entryRingMaterials[i].opacity = 0.34 + 0.34 * (0.5 + Math.sin(t * 0.004 + i * 0.8) * 0.5);
+      }
+
+      /* animate flow tubes */
+      flowOverlayRef.current.tubeTextures.forEach((tex, idx) => {
+        tex.offset.x = (tex.offset.x - dt * (0.8 + idx * 0.03)) % 1;
+      });
+
       /* layer name labels — projected onto 2D overlay */
       const cw = canvas!.clientWidth || s.W;
       s.layerLabels.forEach(({ el, pos }) => {
@@ -938,15 +1172,145 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         l.geometry.dispose();
         (l.material as THREE.Material).dispose();
       });
+      markerMeshes.forEach((m) => {
+        s.scene.remove(m);
+      });
+      markerGeometries.forEach((g) => g.dispose());
+      markerMaterials.forEach((m) => m.dispose());
       s.pts.forEach((p: { m: THREE.Mesh }) => {
         // shared geo/mat — only dispose once below
       });
       particleGeo.dispose();
       Object.values(particleMatCache).forEach(m => m.dispose());
+      clearFlowOverlay(s.scene);
+      setHoverCard(null);
       renderer.dispose();
       overlay.innerHTML = "";
     };
-  }, [updateCamera, doSel, ND, CO, extent]);
+  }, [updateCamera, doSel, ND, CO, extent, strongestOutbound, projectHoverCard, clearFlowOverlay]);
+
+  useEffect(() => {
+    const s = sceneRef.current;
+    if (!s) return;
+
+    clearFlowOverlay(s.scene);
+    if (!showFlowOverlay) return;
+
+    const makeFlowTexture = (): THREE.CanvasTexture => {
+      const cvs = document.createElement("canvas");
+      cvs.width = 256;
+      cvs.height = 16;
+      const ctx = cvs.getContext("2d");
+      if (!ctx) return new THREE.CanvasTexture(cvs);
+      ctx.fillStyle = "rgba(34,211,238,0.06)";
+      ctx.fillRect(0, 0, cvs.width, cvs.height);
+      for (let x = 0; x < cvs.width; x += 24) {
+        ctx.fillStyle = "rgba(225,255,255,0.95)";
+        ctx.fillRect(x, 0, 10, cvs.height);
+      }
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(10, 1);
+      tex.needsUpdate = true;
+      return tex;
+    };
+
+    const makeStepSprite = (step: number): { texture: THREE.CanvasTexture; material: THREE.SpriteMaterial } => {
+      const cvs = document.createElement("canvas");
+      cvs.width = 96;
+      cvs.height = 96;
+      const ctx = cvs.getContext("2d");
+      if (!ctx) {
+        const texture = new THREE.CanvasTexture(cvs);
+        return { texture, material: new THREE.SpriteMaterial({ map: texture }) };
+      }
+      ctx.beginPath();
+      ctx.arc(48, 48, 40, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(34,211,238,0.92)";
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(255,255,255,0.78)";
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 42px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(step), 48, 50);
+      const texture = new THREE.CanvasTexture(cvs);
+      texture.needsUpdate = true;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+      return { texture, material };
+    };
+
+    const outbound = new Map<string, Conn[]>();
+    CO.forEach((conn) => {
+      const curr = outbound.get(conn.a) || [];
+      curr.push(conn);
+      outbound.set(conn.a, curr);
+    });
+    outbound.forEach((edges) => edges.sort((x, y) => y.weight - x.weight));
+
+    const curveByEdge = new Map<string, THREE.QuadraticBezierCurve3>();
+    s.cr.forEach((entry) => {
+      curveByEdge.set(`${entry.a}->${entry.b}`, entry.curve);
+    });
+
+    ND.filter((n) => n.entryPoint).forEach((entryNode) => {
+      const visited = new Set<string>([entryNode.id]);
+      const pathNodes: string[] = [entryNode.id];
+      const pathEdges: Conn[] = [];
+      let current = entryNode.id;
+
+      for (let hops = 0; hops < 8; hops++) {
+        const nextEdge = (outbound.get(current) || []).find((e) => !visited.has(e.b));
+        if (!nextEdge) break;
+        pathEdges.push(nextEdge);
+        current = nextEdge.b;
+        visited.add(current);
+        pathNodes.push(current);
+      }
+
+      pathEdges.forEach((edge, idx) => {
+        const curve = curveByEdge.get(`${edge.a}->${edge.b}`);
+        if (!curve) return;
+        const tubeGeo = new THREE.TubeGeometry(curve, 38, 0.06, 8, false);
+        const flowTex = makeFlowTexture();
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x22d3ee,
+          emissive: 0x22d3ee,
+          emissiveIntensity: 0.85,
+          transparent: true,
+          opacity: 0.88,
+          map: flowTex,
+        });
+        const tube = new THREE.Mesh(tubeGeo, mat);
+        tube.userData = { flow: true, index: idx };
+        s.scene.add(tube);
+        flowOverlayRef.current.tubes.push(tube);
+        flowOverlayRef.current.tubeGeometries.push(tubeGeo);
+        flowOverlayRef.current.tubeMaterials.push(mat);
+        flowOverlayRef.current.tubeTextures.push(flowTex);
+      });
+
+      pathNodes.forEach((nodeId, idx) => {
+        const mesh = s.mm[nodeId];
+        if (!mesh) return;
+        const { texture, material } = makeStepSprite(idx + 1);
+        const sprite = new THREE.Sprite(material);
+        sprite.position.copy(mesh.position).add(new THREE.Vector3(0, 0.85, 0));
+        sprite.scale.set(0.75, 0.75, 0.75);
+        s.scene.add(sprite);
+        flowOverlayRef.current.sprites.push(sprite);
+        flowOverlayRef.current.spriteMaterials.push(material);
+        flowOverlayRef.current.spriteTextures.push(texture);
+      });
+    });
+
+    return () => {
+      clearFlowOverlay(s.scene);
+    };
+  }, [showFlowOverlay, ND, CO, clearFlowOverlay]);
 
   /* ---- external highlight ---- */
   useEffect(() => {
@@ -1003,9 +1367,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const entryCount = ND.filter(n => n.entryPoint).length;
   const securityCount = ND.filter(n => n.security).length;
   const circularCount = ND.filter(n => n.circular).length;
-  const orphanCount = ND.filter(n => n.orphan).length;
   const highRiskCount = ND.filter(n => (n.risk ?? 0) > 60).length;
   const hasEnrichment = ND.some(n => n.risk !== undefined);
+  const connCounts = {
+    import: CO.filter((c) => c.type === "import").length,
+    crossLayer: CO.filter((c) => c.type === "cross-layer").length,
+    circular: CO.filter((c) => c.type === "circular").length,
+    typeImport: CO.filter((c) => c.type === "type-import").length,
+  };
 
   return (
     <div className="w-full">
@@ -1026,6 +1395,16 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
               {btn.label}
             </button>
           ))}
+          <button
+            onClick={() => setShowFlowOverlay((v) => !v)}
+            className={`rounded-full border px-3.5 py-1 text-[11px] font-medium transition ${
+              showFlowOverlay
+                ? "border-cyan-300/60 bg-cyan-100 text-slate-950 shadow-[0_0_10px_rgba(34,211,238,0.25)]"
+                : "border-slate-600/50 bg-transparent text-slate-400 hover:border-slate-500 hover:text-slate-200"
+            }`}
+          >
+            Flow path
+          </button>
         </div>
       )}
 
@@ -1040,7 +1419,50 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           ref={overlayRef}
           className="pointer-events-none absolute left-0 top-0 w-full overflow-hidden"
           style={{ height: 560 }}
-        />
+        >
+          {hoverCard && (
+            <div
+              className="absolute z-20 w-72 rounded-xl border p-3 shadow-2xl"
+              style={{
+                left: Math.min(Math.max(hoverCard.x + 16, 8), (containerRef.current?.clientWidth || 680) - 300),
+                top: Math.min(Math.max(hoverCard.y - 120, 8), 560 - 180),
+                pointerEvents: "none",
+                background: "var(--color-background-primary, rgba(11,16,28,0.94))",
+                borderColor: "var(--color-border-primary, rgba(148,163,184,0.28))",
+                color: "var(--color-text-primary, #e2e8f0)",
+              }}
+            >
+              <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold">
+                <span className="truncate">{hoverCard.filename}</span>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide"
+                  style={{ background: "var(--color-background-secondary, rgba(30,41,59,0.65))", color: "var(--color-text-secondary, #cbd5e1)" }}>
+                  <span className="h-2 w-2 rounded-full" style={{ background: hoverCard.layerColor }} />
+                  {hoverCard.layer}
+                </span>
+              </div>
+              <p className="mb-2 text-[11px] leading-relaxed" style={{ color: "var(--color-text-secondary, #9ca3af)" }}>
+                {hoverCard.summary}
+              </p>
+              <div className="mb-2 flex flex-wrap gap-1.5 text-[10px]">
+                <span className="rounded-md px-2 py-0.5" style={{ background: "var(--color-background-secondary, rgba(30,41,59,0.65))" }}>fan-in: {hoverCard.fanIn}</span>
+                <span className="rounded-md px-2 py-0.5" style={{ background: "var(--color-background-secondary, rgba(30,41,59,0.65))" }}>fan-out: {hoverCard.fanOut}</span>
+                <span
+                  className="rounded-md px-2 py-0.5"
+                  style={{
+                    background: "var(--color-background-secondary, rgba(30,41,59,0.65))",
+                    color: hoverCard.risk > 60 ? "#ef4444" : hoverCard.risk > 30 ? "#f59e0b" : "#22c55e",
+                  }}
+                >
+                  risk: {hoverCard.risk}
+                </span>
+                <span className="rounded-md px-2 py-0.5" style={{ background: "var(--color-background-secondary, rgba(30,41,59,0.65))" }}>LOC: {hoverCard.loc}</span>
+              </div>
+              <div className="text-[11px]" style={{ color: "var(--color-text-secondary, #9ca3af)" }}>
+                Read next: <span style={{ color: "var(--color-text-primary, #e2e8f0)" }}>{hoverCard.readNext} →</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* hint text */}
         <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#0a0e18]/70 px-2.5 py-1.5 text-[10px] text-white/40 backdrop-blur-sm">
@@ -1106,12 +1528,29 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
                   <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Connections</div>
                   <div className="flex items-center gap-2 py-0.5">
                     <span className="inline-block h-0.5 w-4" style={{ background: "#3d7acc" }} />
-                    <span className="text-[10px] text-slate-300">Dependency</span>
+                    <span className="text-[10px] text-slate-300">Import ({connCounts.import})</span>
                   </div>
                   <div className="flex items-center gap-2 py-0.5">
-                    <span className="inline-block h-0.5 w-4" style={{ background: "#ff4444" }} />
-                    <span className="text-[10px] text-slate-300">Circular dependency</span>
-                    {circularCount > 0 && <span className="text-[9px] text-red-400">{circularCount}</span>}
+                    <span className="inline-block h-0.5 w-4" style={{ background: "#7f77dd" }} />
+                    <span className="text-[10px] text-slate-300">Cross-layer ({connCounts.crossLayer})</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span
+                      className="inline-block h-0.5 w-4"
+                      style={{
+                        background: "repeating-linear-gradient(90deg, #dc2626 0 6px, transparent 6px 10px)",
+                      }}
+                    />
+                    <span className="text-[10px] text-slate-300">Circular ({connCounts.circular})</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span
+                      className="inline-block h-0.5 w-4"
+                      style={{
+                        background: "repeating-linear-gradient(90deg, #888780 0 5px, transparent 5px 9px)",
+                      }}
+                    />
+                    <span className="text-[10px] text-slate-300">Type import ({connCounts.typeImport})</span>
                   </div>
                 </div>
               )}

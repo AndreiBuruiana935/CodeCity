@@ -106,6 +106,16 @@ function shouldIncludeFile(path: string, includeTests: boolean): boolean {
   return true;
 }
 
+function classifyBuildingLayer(path: string, aiLayer?: Building["aiLayer"]): "database" | "backend" | "api" | "frontend" {
+  if (aiLayer) return aiLayer;
+  const p = path.toLowerCase();
+  if (/\/(api|routes|controllers|endpoints)\//.test(p) || /\/server\.(ts|js|mjs)$/.test(p)) return "api";
+  if (/\.d\.ts$/.test(p) || /\/src\/types?\//.test(p)) return "backend";
+  if (/\/(models?|schema|database|db|prisma|migrations?|entities|seeds?)\//.test(p) || /\.(sql|prisma)$/.test(p)) return "database";
+  if (/\/(lib|services?|utils?|helpers?|middleware|config|scripts?)\//.test(p) || /\.(config|rc)\.(ts|js|mjs|cjs|json)$/.test(p)) return "backend";
+  return "frontend";
+}
+
 /**
  * Prioritize files for content fetching.
  * Entry points, security files, and code files get priority.
@@ -321,19 +331,39 @@ export async function generateCity(
 
   // Build roads from dependencies
   const roads: Road[] = [];
-  const roadMap = new Map<string, number>();
+  const roadMap = new Map<string, { weight: number; hasTypeImport: boolean; crossLayer: boolean }>();
   for (const bld of allBuildings) {
     for (const dep of bld.dependencies) {
       const targetBld = findBuildingByImport(dep, bld.path, buildingsByPath);
       if (targetBld && targetBld.id !== bld.id) {
         const key = `${bld.id}->${targetBld.id}`;
-        roadMap.set(key, (roadMap.get(key) || 0) + 1);
+        const prev = roadMap.get(key);
+        const depPath = dep.toLowerCase();
+        const isTypeImport = depPath.includes("/types/") || /\.d\.ts$/i.test(targetBld.path);
+        const sourceLayer = classifyBuildingLayer(bld.path, bld.aiLayer);
+        const targetLayer = classifyBuildingLayer(targetBld.path, targetBld.aiLayer);
+        const crossLayer = sourceLayer !== targetLayer;
+        roadMap.set(key, {
+          weight: (prev?.weight || 0) + 1,
+          hasTypeImport: Boolean(prev?.hasTypeImport) || isTypeImport,
+          crossLayer: Boolean(prev?.crossLayer) || crossLayer,
+        });
       }
     }
   }
-  for (const [key, weight] of roadMap) {
+
+  const pairSet = new Set<string>(roadMap.keys());
+  for (const [key, meta] of roadMap) {
     const [from, to] = key.split("->");
-    roads.push({ from, to, type: "import", weight });
+    const isCircular = pairSet.has(`${to}->${from}`);
+    const type: Road["type"] = isCircular
+      ? "circular"
+      : meta.hasTypeImport
+      ? "type-import"
+      : meta.crossLayer
+      ? "cross-layer"
+      : "import";
+    roads.push({ from, to, type, weight: meta.weight });
   }
 
   // Identify entry points and hotspots

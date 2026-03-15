@@ -68,7 +68,7 @@ export interface DistrictDetails {
 export interface Road {
   from: string;
   to: string;
-  type: "import";
+  type: "import" | "type-import" | "circular" | "cross-layer";
   weight: number;
 }
 
