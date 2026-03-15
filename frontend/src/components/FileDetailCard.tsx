@@ -222,17 +222,6 @@ export default function FileDetailCard({
 
       {/* ═══ ACTION BAR ═════════════════════════════════════ */}
       <div className="flex items-center gap-2 border-b border-white/6 px-4 py-2">
-        {githubFileUrl && (
-          <a
-            href={githubFileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-900/15 px-3 py-1.5 text-[13px] font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-900/25"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /></svg>
-            See Code
-          </a>
-        )}
         {repoOwner && repoName && (
           <a
             href={`https://github.com/${repoOwner}/${repoName}`}

@@ -190,15 +190,18 @@ function runLayerForce(
 ): Map<string, { x: number; z: number }> {
   const NODE_RADIUS = 0.6;
 
-  // Seed positions in a small ring so force doesn't start from random noise
+  const count = layerNodes.length;
+  if (count === 0) return new Map();
+
+  // Seed in a ring scaled to node count so the simulation has room
+  const seedRadius = Math.max(3, Math.sqrt(count) * 1.5);
   const simNodes: ForceNode[] = layerNodes.map((n, i) => {
-    const angle = (i / Math.max(layerNodes.length, 1)) * Math.PI * 2;
-    const r = 2 + Math.random() * 1;
+    const angle = (i / count) * Math.PI * 2;
     return {
       id: n.id,
       fanIn: n.fanIn,
-      x: Math.cos(angle) * r,
-      y: Math.sin(angle) * r,
+      x: Math.cos(angle) * seedRadius + (Math.random() - 0.5) * 0.5,
+      y: Math.sin(angle) * seedRadius + (Math.random() - 0.5) * 0.5,
     };
   });
 
@@ -212,29 +215,28 @@ function runLayerForce(
       weight: e.weight,
     }));
 
-  // Adaptive charge: fewer nodes → less repulsion for tighter clusters
-  const chargeStrength = layerNodes.length < 8 ? -12 : layerNodes.length < 20 ? -18 : -25;
+  // Charge scales with count: more nodes need more repulsion to spread
+  const chargeStrength = -(15 + count * 1.2);
 
   const sim = forceSimulation<ForceNode>(simNodes)
     .force(
       "link",
       forceLink<ForceNode, ForceLink>(simLinks)
         .id((d) => d.id)
-        .distance((d) => 1.2 + (1 / Math.max(d.weight, 0.2)) * 0.6)
-        .strength(0.8),
+        .distance((d) => 2.0 + (1 / Math.max(d.weight, 0.2)) * 1.0)
+        .strength(0.5),
     )
     .force("charge", forceManyBody<ForceNode>().strength(chargeStrength))
-    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 0.5).strength(0.7))
-    .force("center", forceCenter<ForceNode>(0, 0).strength(0.3))
+    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 0.7).strength(1.0).iterations(2))
+    .force("center", forceCenter<ForceNode>(0, 0).strength(0.1))
     .stop();
 
-  // Hub nodes get pulled toward center
-  const hubNodes = simNodes.filter((n) => n.fanIn > 5);
-  if (hubNodes.length > 0) {
+  // Hub nodes pulled toward center but not aggressively
+  if (simNodes.some((n) => n.fanIn > 5)) {
     sim.force(
       "radial",
-      forceRadial<ForceNode>(1.5, 0, 0)
-        .strength((d) => (d.fanIn > 5 ? 0.6 : 0)),
+      forceRadial<ForceNode>(seedRadius * 0.3, 0, 0)
+        .strength((d) => (d.fanIn > 5 ? 0.3 : 0)),
     );
   }
 
@@ -244,15 +246,15 @@ function runLayerForce(
     if (sim.alpha() < 0.001) break;
   }
 
-  // Normalize positions to a tight target radius
-  // Small layers stay compact, big layers get slightly more room
-  const targetRadius = Math.max(3, Math.min(8, Math.sqrt(simNodes.length) * 0.9));
+  // DON'T normalize — let the natural force layout determine spread.
+  // Only apply a gentle cap if the extent is crazy.
+  const maxAllowed = Math.max(8, Math.sqrt(count) * 2.5);
   let maxR = 0;
   for (const n of simNodes) {
     const r = Math.sqrt((n.x ?? 0) ** 2 + (n.y ?? 0) ** 2);
     maxR = Math.max(maxR, r);
   }
-  const scale = maxR > 0.1 ? targetRadius / maxR : 1;
+  const scale = maxR > maxAllowed ? maxAllowed / maxR : 1;
 
   const result = new Map<string, { x: number; z: number }>();
   for (const n of simNodes) {
@@ -415,6 +417,8 @@ interface Props {
   highlightNodeId?: string | null;
   onHighlightConsumed?: () => void;
   controlledFilters?: Set<string>;
+  /** Which edge types to show. "all" = progressive disclosure default. Otherwise filter to specific types. */
+  controlledEdgeFilter?: string;
 }
 
 /**
@@ -425,7 +429,7 @@ interface Props {
  */
 type DisclosureState = "default" | "hover" | "selected";
 
-export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHighlightConsumed, controlledFilters }: Props) {
+export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHighlightConsumed, controlledFilters, controlledEdgeFilter }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
@@ -517,6 +521,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       type: ConnType;
       weight: number;
       material: THREE.MeshStandardMaterial;
+      baseColor: number;
       curve: THREE.QuadraticBezierCurve3;
     }[];
     css2dLabels: { obj: CSS2DObject; nodeId: string; el: HTMLDivElement }[];
@@ -554,6 +559,11 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const filterRef = useRef(activeFilters);
   filterRef.current = activeFilters;
 
+  const edgeFilterRef = useRef(controlledEdgeFilter ?? "all");
+  edgeFilterRef.current = controlledEdgeFilter ?? "all";
+
+  const applyDisclosureRef = useRef<(() => void) | null>(null);
+
   /* ---- updateCamera helper ---- */
   const updateCamera = useCallback((s: NonNullable<typeof sceneRef.current>) => {
     s.cam.position.set(
@@ -570,43 +580,70 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     if (!s) return;
 
     const { disclosure, hoveredId, selectedId } = s;
+    const edgeFilter = edgeFilterRef.current; // "all" | "import" | "cross-layer" | "circular" | "type-import"
+
+    // Helper: should this edge type be visible given the current edge filter?
+    const typePassesFilter = (type: ConnType) => {
+      if (edgeFilter === "all") return true;
+      return type === edgeFilter;
+    };
 
     if (disclosure === "default") {
-      // Show ONLY cross-layer and circular edges
-      s.tubeData.forEach(({ mesh, type, material }) => {
-        if (type === "cross-layer") {
-          mesh.visible = true;
-          material.opacity = 0.55;
-        } else if (type === "circular") {
-          mesh.visible = true;
-          material.opacity = 0.50;
-        } else {
-          mesh.visible = false;
-        }
-      });
-      // All nodes full opacity
+      if (edgeFilter === "all") {
+        // Progressive disclosure: only cross-layer + circular
+        s.tubeData.forEach(({ mesh, type, material, baseColor }) => {
+          if (type === "cross-layer") {
+            mesh.visible = true;
+            material.color.setHex(baseColor);
+            material.opacity = 0.55;
+          } else if (type === "circular") {
+            mesh.visible = true;
+            material.color.setHex(baseColor);
+            material.opacity = 0.50;
+          } else {
+            mesh.visible = false;
+          }
+        });
+      } else {
+        // Specific edge type filter — show ONLY edges of that type
+        const connectedNodes = new Set<string>();
+        s.tubeData.forEach(({ mesh, a, b, type, material, baseColor }) => {
+          if (typePassesFilter(type)) {
+            mesh.visible = true;
+            material.color.setHex(baseColor);
+            material.opacity = type === "circular" ? 0.5 : 0.6;
+            connectedNodes.add(a);
+            connectedNodes.add(b);
+          } else {
+            mesh.visible = false;
+          }
+        });
+        // Dim nodes not involved in filtered edges
+        s.ml.forEach((m) => {
+          const nid = (m.userData as { id: string }).id;
+          (m.material as THREE.MeshStandardMaterial).opacity = connectedNodes.has(nid) ? 0.95 : 0.12;
+        });
+        return; // skip default node opacity reset
+      }
+      // All nodes full opacity (for "all" default)
       s.ml.forEach((m) => {
         (m.material as THREE.MeshStandardMaterial).opacity = 0.88;
       });
     } else if (disclosure === "hover" && hoveredId) {
-      // 1-hop: only direct edges of hovered node + cross-layer + circular
       const directNeighbors = new Set<string>();
-      s.tubeData.forEach(({ mesh, a, b, type, material }) => {
+      s.tubeData.forEach(({ mesh, a, b, type, material, baseColor }) => {
         const isHoveredEdge = a === hoveredId || b === hoveredId;
-        if (type === "cross-layer") {
+        if ((type === "cross-layer" || type === "circular") && typePassesFilter(type)) {
           mesh.visible = true;
-          material.opacity = 0.55;
-        } else if (type === "circular") {
+          material.color.setHex(baseColor);
+          material.opacity = type === "circular" ? 0.50 : 0.55;
+        } else if (isHoveredEdge && typePassesFilter(type)) {
           mesh.visible = true;
-          material.opacity = 0.50;
-        } else if (isHoveredEdge) {
-          mesh.visible = true;
-          // Fan-out (source is hovered) = cyan, fan-in (target is hovered) = amber
           if (a === hoveredId) {
-            material.color.setHex(0x22d3ee); // cyan
+            material.color.setHex(0x22d3ee); // cyan fan-out
             directNeighbors.add(b);
           } else {
-            material.color.setHex(0xf59e0b); // amber
+            material.color.setHex(0xf59e0b); // amber fan-in
             directNeighbors.add(a);
           }
           material.opacity = 0.75;
@@ -614,31 +651,27 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           mesh.visible = false;
         }
       });
-      // Dim non-neighbor nodes to 15%
       s.ml.forEach((m) => {
         const nid = (m.userData as { id: string }).id;
         const mat = m.material as THREE.MeshStandardMaterial;
         mat.opacity = (nid === hoveredId || directNeighbors.has(nid)) ? 1.0 : 0.15;
       });
     } else if (disclosure === "selected" && selectedId) {
-      // 2-hop neighborhood
       const neighborhood = get2HopNeighborhood(selectedId);
-      s.tubeData.forEach(({ mesh, a, b, type, material }) => {
+      s.tubeData.forEach(({ mesh, a, b, type, material, baseColor }) => {
         const inNeighborhood = neighborhood.has(a) && neighborhood.has(b);
-        if (type === "cross-layer") {
+        if ((type === "cross-layer" || type === "circular") && typePassesFilter(type)) {
           mesh.visible = true;
-          material.opacity = 0.55;
-        } else if (type === "circular") {
+          material.color.setHex(baseColor);
+          material.opacity = type === "circular" ? 0.50 : 0.55;
+        } else if (inNeighborhood && typePassesFilter(type)) {
           mesh.visible = true;
-          material.opacity = 0.50;
-        } else if (inNeighborhood) {
-          mesh.visible = true;
+          material.color.setHex(baseColor);
           material.opacity = 0.65;
         } else {
           mesh.visible = false;
         }
       });
-      // Non-neighborhood nodes fade to 8%
       s.ml.forEach((m) => {
         const nid = (m.userData as { id: string }).id;
         const mat = m.material as THREE.MeshStandardMaterial;
@@ -677,6 +710,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
     });
   }, [get2HopNeighborhood]);
+
+  // Keep ref in sync so external effects can call it
+  applyDisclosureRef.current = applyDisclosure;
+
+  // React to edge filter changes from page
+  useEffect(() => {
+    applyDisclosure();
+  }, [controlledEdgeFilter, applyDisclosure]);
 
   /* ---- selection logic ---- */
   const doSel = useCallback((mesh: THREE.Mesh | null) => {
@@ -932,6 +973,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       labelDiv.style.whiteSpace = "nowrap";
       labelDiv.style.pointerEvents = "none";
       labelDiv.style.userSelect = "none";
+      labelDiv.dataset.nodeId = n.id;
 
       const baseName = stripExtension(n.lb);
 
@@ -1094,6 +1136,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         mesh: tubeMesh,
         a, b, type, weight,
         material: tubeMat,
+        baseColor: tubeColor,
         curve,
       });
     });
@@ -1113,23 +1156,25 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
     });
 
-    /* layer name labels -- placed at a far corner of each layer plane */
+    /* layer name labels — positioned right of the node cluster */
     const layerLabels: { el: HTMLDivElement; pos: THREE.Vector3 }[] = [];
-    for (const [, ly] of Object.entries(LAYERS)) {
+    for (const [lk, ly] of Object.entries(LAYERS)) {
+      // Find rightmost node in this layer to position label nearby
+      const layerMeshes = ND.filter(n => n.l === lk);
+      const maxX = layerMeshes.reduce((mx, n) => Math.max(mx, n.x), 0);
       const el = document.createElement("div");
       el.style.position = "absolute";
-      el.style.fontSize = "13px";
-      el.style.fontWeight = "700";
-      el.style.letterSpacing = "0.15em";
+      el.style.fontSize = "14px";
+      el.style.fontWeight = "800";
+      el.style.letterSpacing = "0.12em";
       el.style.textTransform = "uppercase";
       el.style.color = `#${ly.c.toString(16).padStart(6, "0")}`;
-      el.style.textShadow = "0 1px 4px rgba(0,0,0,0.7)";
+      el.style.textShadow = `0 0 12px ${`#${ly.c.toString(16).padStart(6, "0")}`}44, 0 1px 4px rgba(0,0,0,0.8)`;
       el.style.pointerEvents = "none";
       el.style.whiteSpace = "nowrap";
       el.textContent = ly.name.toUpperCase();
       overlayDiv.appendChild(el);
-      const cornerOffset = gridExtent * 0.46;
-      layerLabels.push({ el, pos: new THREE.Vector3(-cornerOffset, ly.y, -cornerOffset) });
+      layerLabels.push({ el, pos: new THREE.Vector3(maxX + 3, ly.y, 0) });
     }
 
     /* state object */
@@ -1373,11 +1418,28 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         }
       });
 
-      /* CSS2D label zoom-based opacity */
+      /* CSS2D label: distance-based per-label visibility.
+         Only labels close to the camera target AND within zoom range are shown.
+         This prevents the label soup effect. */
       const camDist = s.cam.position.distanceTo(new THREE.Vector3(s.tx, s.ty, s.tz));
-      const labelOpacity = clamp((30 - camDist) / 15, 0, 1);
-      s.css2dLabels.forEach(({ el }) => {
-        el.style.opacity = String(labelOpacity);
+      const globalFade = clamp((25 - camDist) / 12, 0, 1);
+      const camTarget = new THREE.Vector3(s.tx, s.ty, s.tz);
+
+      s.css2dLabels.forEach(({ el, obj }) => {
+        if (globalFade < 0.01) {
+          el.style.opacity = "0";
+          return;
+        }
+        // Distance from this label's world position to camera look-at target
+        const worldPos = new THREE.Vector3();
+        obj.getWorldPosition(worldPos);
+        const distToTarget = worldPos.distanceTo(camTarget);
+        // Labels within 8 units of camera target: full, then fade to 0 by 16 units
+        const proximityFade = clamp((12 - distToTarget) / 6, 0, 1);
+        // Selected/hovered labels always visible when zoomed in
+        const isSelected = s.selectedId === el.dataset.nodeId;
+        const finalOpacity = isSelected ? globalFade : globalFade * proximityFade;
+        el.style.opacity = String(finalOpacity);
       });
 
       /* layer name labels -- projected onto 2D overlay */
@@ -1583,7 +1645,65 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
       {/* hint text */}
       <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#0a0e18]/70 px-2.5 py-1.5 text-[13px] text-white/40 backdrop-blur-sm">
-        Drag to orbit &middot; Ctrl+drag to pan &middot; Ctrl+scroll to zoom &middot; Click a node
+        Drag to orbit · Ctrl+drag to pan · Ctrl+scroll to zoom · Click a node
+      </div>
+
+      {/* ── Legend ── */}
+      <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-xl border border-white/8 bg-[#0a0e18]/85 px-3 py-2.5 backdrop-blur-sm">
+        <div className="mb-2 text-[13px] font-semibold text-slate-400">Legend</div>
+        {/* Node colors = risk */}
+        <div className="mb-2 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#16a34a" }} />
+            <span className="text-[13px] text-slate-400">Low risk (0–30)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#d97706" }} />
+            <span className="text-[13px] text-slate-400">Medium risk (31–60)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#dc2626" }} />
+            <span className="text-[13px] text-slate-400">High risk (61+)</span>
+          </div>
+        </div>
+        {/* Markers */}
+        <div className="mb-2 space-y-1 border-t border-white/6 pt-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] text-sky-400">◯</span>
+            <span className="text-[13px] text-slate-400">Entry point (ring)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] text-purple-400">●</span>
+            <span className="text-[13px] text-slate-400">Security-sensitive</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] text-red-400">⚠</span>
+            <span className="text-[13px] text-slate-400">Hotspot (high risk)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] text-cyan-400">⬟</span>
+            <span className="text-[13px] text-slate-400">Entry point label</span>
+          </div>
+        </div>
+        {/* Connections */}
+        <div className="space-y-1 border-t border-white/6 pt-2">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-0.5 w-4 rounded" style={{ background: "#7f77dd" }} />
+            <span className="text-[13px] text-slate-400">Cross-layer</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-0.5 w-4 rounded" style={{ background: "#ef4444" }} />
+            <span className="text-[13px] text-slate-400">Circular dep</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-0.5 w-4 rounded" style={{ background: "#22d3ee" }} />
+            <span className="text-[13px] text-slate-400">Fan-out (on hover)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-0.5 w-4 rounded" style={{ background: "#f59e0b" }} />
+            <span className="text-[13px] text-slate-400">Fan-in (on hover)</span>
+          </div>
+        </div>
       </div>
 
       {/* minimap */}

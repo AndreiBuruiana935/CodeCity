@@ -187,6 +187,7 @@ export default function ArchitecturePage() {
 
   // Layer filter state
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(["all"]));
+  const [activeEdgeFilter, setActiveEdgeFilter] = useState<string>("all");
 
   // Chat state
   interface ChatMsg { role: "user" | "assistant"; text: string }
@@ -759,6 +760,7 @@ export default function ArchitecturePage() {
               highlightNodeId={highlightNodeId}
               onHighlightConsumed={() => setHighlightNodeId(null)}
               controlledFilters={activeFilters}
+              controlledEdgeFilter={activeEdgeFilter}
             />
           </div>
 
@@ -808,26 +810,34 @@ export default function ArchitecturePage() {
             <div className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-slate-950/80 px-2.5 py-1.5 backdrop-blur-xl">
               <span className="mr-1 text-[13px] font-medium text-slate-500">Edges</span>
               {([
-                { id: "conn-all",         label: "All",         color: "#94a3b8", count: connCounts.total },
-                { id: "conn-cross-layer", label: "Cross-layer", color: "#7f77dd", count: connCounts["cross-layer"] },
-                { id: "conn-circular",    label: "Circular",    color: "#ef4444", count: connCounts.circular },
-                { id: "conn-import",      label: "Import",      color: "#3d7acc", count: connCounts.import },
-                { id: "conn-type-import", label: "Type",        color: "#888888", count: connCounts["type-import"] },
-              ] as const).map((btn) => (
-                <button
-                  key={btn.id}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
-                >
-                  <span
-                    className="h-1.5 w-3 rounded-full"
-                    style={{ backgroundColor: btn.color }}
-                  />
-                  {btn.label}
-                  {btn.count > 0 && (
-                    <span className="text-[13px] tabular-nums text-slate-600">{btn.count}</span>
-                  )}
-                </button>
-              ))}
+                { id: "all",          label: "All",         color: "#94a3b8", count: connCounts.total },
+                { id: "cross-layer",  label: "Cross-layer", color: "#7f77dd", count: connCounts["cross-layer"] },
+                { id: "circular",     label: "Circular",    color: "#ef4444", count: connCounts.circular },
+                { id: "import",       label: "Import",      color: "#3d7acc", count: connCounts.import },
+                { id: "type-import",  label: "Type",        color: "#888888", count: connCounts["type-import"] },
+              ] as const).map((btn) => {
+                const isActive = activeEdgeFilter === btn.id;
+                return (
+                  <button
+                    key={btn.id}
+                    onClick={() => setActiveEdgeFilter(isActive && btn.id !== "all" ? "all" : btn.id)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium transition ${
+                      isActive
+                        ? "bg-white/12 text-white shadow-sm"
+                        : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    }`}
+                  >
+                    <span
+                      className="h-1.5 w-3 rounded-full"
+                      style={{ backgroundColor: btn.color, opacity: isActive ? 1 : 0.5 }}
+                    />
+                    {btn.label}
+                    {btn.count > 0 && (
+                      <span className={`text-[13px] tabular-nums ${isActive ? "text-slate-400" : "text-slate-600"}`}>{btn.count}</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
