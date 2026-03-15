@@ -489,7 +489,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
     /* scene + camera */
     const scene = new THREE.Scene();
-    const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, 500);
+    const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, Math.max(500, extent * 4));
 
     /* dynamic grid extent based on node layout */
     const gridExtent = extent;
@@ -620,6 +620,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       const geo = new THREE.BoxGeometry(w, h, d);
       const m = new THREE.Mesh(geo, materials);
       m.position.set(n.x, ly.y + h / 2, n.z);
+      m.frustumCulled = false;
       m.userData = { id: n.id, lb: n.lb, l: n.l, lname: ly.name, risk: n.risk, hotspot: n.hotspot, entryPoint: n.entryPoint, security: n.security, circular: n.circular, orphan: n.orphan };
       scene.add(m);
       mm[n.id] = m;

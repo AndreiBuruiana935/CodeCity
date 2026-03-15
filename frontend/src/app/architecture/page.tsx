@@ -657,7 +657,7 @@ export default function ArchitecturePage() {
                     </span>
                     {githubFileUrl && (
                       <a href={githubFileUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg border border-cyan-300/35 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-100 transition hover:border-cyan-200/70 hover:bg-cyan-400/15">
-                        GitHub
+                        See File Code
                       </a>
                     )}
                     <button onClick={() => setSelected(null)} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-slate-800 hover:text-slate-300">✕</button>
