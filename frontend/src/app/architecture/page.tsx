@@ -125,10 +125,17 @@ export default function ArchitecturePage() {
     softResetCity,
     analyzeRepo,
     onboarding,
+    tourActive,
+    tourStep,
+    handleTourStart,
+    handleTourNext,
+    handleTourPrev,
+    setTourActive,
   } = useAppContext();
 
   const [selected, setSelected] = useState<ArchSelection | null>(null);
   const [dirSidebarOpen, setDirSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"files" | "reading">("files");
   const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
   const [stayOnPage, setStayOnPage] = useState(false);
 
@@ -242,6 +249,15 @@ export default function ArchitecturePage() {
   useEffect(() => {
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatMessages, chatLoading]);
+
+  // Sync tour step → highlight building on 3D map
+  useEffect(() => {
+    if (!tourActive || !onboarding?.guidedTour) return;
+    const step = onboarding.guidedTour[tourStep];
+    if (step?.buildingId) {
+      setHighlightNodeId(step.buildingId);
+    }
+  }, [tourActive, tourStep, onboarding]);
 
 
 
@@ -481,6 +497,16 @@ export default function ArchitecturePage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {onboarding?.guidedTour && onboarding.guidedTour.length > 0 && !tourActive && (
+              <button
+                type="button"
+                onClick={handleTourStart}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/50 bg-emerald-900/30 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-900/50"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" /></svg>
+                Guided Tour
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setDirSidebarOpen((v) => !v)}
@@ -554,6 +580,78 @@ export default function ArchitecturePage() {
           {/* Architecture map — fills remaining space */}
           <div className="relative min-h-0 min-w-0 flex-1">
             <ArchitectureMap onSelect={handleSelect} city={city} highlightNodeId={highlightNodeId} onHighlightConsumed={() => setHighlightNodeId(null)} controlledFilters={activeFilters} />
+
+            {/* ── Guided Tour Overlay ── */}
+            {tourActive && onboarding?.guidedTour && onboarding.guidedTour.length > 0 && (() => {
+              const step = onboarding.guidedTour[tourStep];
+              if (!step) return null;
+              const total = onboarding.guidedTour.length;
+              const isFirst = tourStep === 0;
+              const isLast = tourStep === total - 1;
+              return (
+                <div className="pointer-events-none absolute inset-0 z-20">
+                  {/* Bottom-left tour card */}
+                  <div className="pointer-events-auto absolute bottom-6 left-6 w-80 rounded-2xl border border-emerald-400/30 bg-slate-950/95 p-5 shadow-2xl shadow-emerald-900/20 backdrop-blur-xl">
+                    {/* Step indicator */}
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: total }).map((_, i) => (
+                          <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === tourStep ? "w-6 bg-emerald-400" : "w-1.5 bg-slate-600"}`} />
+                        ))}
+                      </div>
+                      <span className="ml-auto text-[10px] text-slate-500">{tourStep + 1}/{total}</span>
+                      <button onClick={() => setTourActive(false)} className="rounded-md p-0.5 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    {/* Label */}
+                    <h3 className="mb-1 text-sm font-bold text-emerald-300">{step.label}</h3>
+                    {/* File path */}
+                    <p className="mb-2 truncate font-mono text-[11px] text-slate-400">{step.file}</p>
+                    {/* Description */}
+                    <p className="mb-4 text-xs leading-relaxed text-slate-300">{step.description}</p>
+                    {/* Navigation */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleTourPrev}
+                        disabled={isFirst}
+                        className="rounded-lg border border-slate-600/50 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:text-white disabled:opacity-30"
+                      >
+                        Prev
+                      </button>
+                      <button
+                        onClick={() => {
+                          /* Select the building for this tour step */
+                          const building = city.city.districts.flatMap(d => d.buildings).find(b => b.id === step.buildingId);
+                          if (building) {
+                            setSelected({ id: building.id, label: building.filename, layer: "frontend", connectionCount: 0, connectedTo: [] });
+                            setHighlightNodeId(step.buildingId);
+                          }
+                        }}
+                        className="rounded-lg border border-cyan-400/30 bg-cyan-900/20 px-3 py-1.5 text-xs font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-900/30"
+                      >
+                        View File
+                      </button>
+                      {isLast ? (
+                        <button
+                          onClick={() => setTourActive(false)}
+                          className="ml-auto rounded-lg border border-emerald-400/50 bg-emerald-900/30 px-3 py-1.5 text-xs font-bold text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-800/40"
+                        >
+                          Finish Tour
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleTourNext}
+                          className="ml-auto rounded-lg border border-emerald-400/50 bg-emerald-900/30 px-3 py-1.5 text-xs font-bold text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-800/40"
+                        >
+                          Next
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Right sidebar — always rendered, content slides between File Explorer and Layer Stats */}
@@ -561,35 +659,140 @@ export default function ArchitecturePage() {
             <div className="relative min-h-0 flex-1 overflow-hidden">
               {/* File Explorer panel — slides in from right */}
               <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ease-in-out ${dirSidebarOpen ? "translate-x-0" : "translate-x-full"}`}>
-                {/* Header */}
-                <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
-                  <svg className="h-4 w-4 text-cyan-400/80" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-                  </svg>
-                  <h2 className="text-xs font-semibold tracking-wide text-slate-200">File Explorer</h2>
+                {/* Tab header: Files / Reading List */}
+                <div className="flex border-b border-white/6">
+                  <button
+                    type="button"
+                    onClick={() => setSidebarTab("files")}
+                    className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-[11px] font-semibold tracking-wide transition ${
+                      sidebarTab === "files"
+                        ? "border-b-2 border-cyan-400 text-cyan-200"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                    </svg>
+                    Files
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarTab("reading")}
+                    className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-[11px] font-semibold tracking-wide transition ${
+                      sidebarTab === "reading"
+                        ? "border-b-2 border-amber-400 text-amber-200"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                    </svg>
+                    Reading List
+                    {onboarding?.readingList && onboarding.readingList.length > 0 && (
+                      <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">{onboarding.readingList.length}</span>
+                    )}
+                  </button>
                 </div>
-                {/* File count */}
-                <div className="border-b border-white/4 px-4 py-2">
-                  <span className="text-[10px] text-slate-500">{city.city.districts.flatMap(d => d.buildings).length} files</span>
-                </div>
-                {/* Tree */}
-                <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
-                  <DirTreeView nodes={dirTree} onSelectFile={(fileId) => {
-                    const building = city.city.districts
-                      .flatMap((d) => d.buildings)
-                      .find((b) => b.id === fileId);
-                    if (building) {
-                      setSelected({
-                        id: building.id,
-                        label: building.filename,
-                        layer: "frontend",
-                        connectionCount: 0,
-                        connectedTo: [],
-                      });
-                      setHighlightNodeId(fileId);
-                    }
-                  }} />
-                </div>
+
+                {/* Files tab content */}
+                {sidebarTab === "files" && (
+                  <>
+                    <div className="border-b border-white/4 px-4 py-2">
+                      <span className="text-[10px] text-slate-500">{city.city.districts.flatMap(d => d.buildings).length} files</span>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                      <DirTreeView nodes={dirTree} onSelectFile={(fileId) => {
+                        const building = city.city.districts
+                          .flatMap((d) => d.buildings)
+                          .find((b) => b.id === fileId);
+                        if (building) {
+                          setSelected({
+                            id: building.id,
+                            label: building.filename,
+                            layer: "frontend",
+                            connectionCount: 0,
+                            connectedTo: [],
+                          });
+                          setHighlightNodeId(fileId);
+                        }
+                      }} />
+                    </div>
+                  </>
+                )}
+
+                {/* Reading List tab content */}
+                {sidebarTab === "reading" && (
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                    {onboarding?.readingList && onboarding.readingList.length > 0 ? (
+                      <>
+                        <div className="border-b border-white/4 px-4 py-2">
+                          <span className="text-[10px] text-slate-500">Start with these files to understand the codebase</span>
+                        </div>
+                        <div className="space-y-1 px-2 py-2">
+                          {onboarding.readingList.map((item, i) => {
+                            const isActive = selectedBuilding?.id === item.buildingId;
+                            return (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => {
+                                  const building = city.city.districts
+                                    .flatMap((d) => d.buildings)
+                                    .find((b) => b.id === item.buildingId);
+                                  if (building) {
+                                    setSelected({
+                                      id: building.id,
+                                      label: building.filename,
+                                      layer: "frontend",
+                                      connectionCount: 0,
+                                      connectedTo: [],
+                                    });
+                                    setHighlightNodeId(item.buildingId);
+                                  }
+                                }}
+                                className={`group flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition ${
+                                  isActive
+                                    ? "border-amber-400/40 bg-amber-900/20"
+                                    : "border-white/5 bg-white/2 hover:border-white/10 hover:bg-white/4"
+                                }`}
+                              >
+                                {/* Priority number */}
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-bold text-amber-300">
+                                  {item.priority}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  {/* File name */}
+                                  <p className="truncate font-mono text-[11px] font-medium text-slate-200 group-hover:text-white">
+                                    {item.file.split("/").pop()}
+                                  </p>
+                                  {/* Full path */}
+                                  <p className="truncate text-[10px] text-slate-500">
+                                    {item.file}
+                                  </p>
+                                  {/* Reason */}
+                                  <p className="mt-1 text-[10px] leading-snug text-slate-400">
+                                    {item.reason}
+                                  </p>
+                                  {/* Estimated time */}
+                                  <span className="mt-1 inline-block rounded bg-slate-800/60 px-1.5 py-0.5 text-[9px] text-slate-500">
+                                    ~{item.estimatedMinutes} min read
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-4">
+                        <svg className="h-8 w-8 text-slate-700" fill="none" viewBox="0 0 24 24" strokeWidth="1" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                        </svg>
+                        <p className="text-center text-[11px] text-slate-600">No reading list available</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Layer Stats panel — slides in from left */}
