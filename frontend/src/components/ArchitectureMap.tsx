@@ -321,8 +321,8 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
     }
   }
 
-  // Grid extent based on actual node spread — keep it tight
-  const extent = Math.max(10, Math.min(24, maxSpread * 2 + 3));
+  // Grid extent based on actual node spread — platforms must cover all nodes
+  const extent = Math.max(14, maxSpread * 2 + 4);
 
   return { ND, CO, extent };
 }
