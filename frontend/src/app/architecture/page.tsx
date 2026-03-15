@@ -139,20 +139,13 @@ export default function ArchitecturePage() {
   const [sidebarTab, setSidebarTab] = useState<"files" | "reading">("files");
   const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
   const [stayOnPage, setStayOnPage] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
-  // Reset showSummary when repo or city changes
-  useEffect(() => {
-    setShowSummary(false);
-  }, [repoUrl, city]);
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false);
 
-  // Show summary popup on entry if onboarding exists
   useEffect(() => {
-    if (onboarding) {
-      setShowSummary(true);
+    if (onboarding?.plainEnglish) {
+      setShowSummaryPopup(true);
     }
-    // Only show once per entry
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onboarding]);
+  }, [onboarding?.plainEnglish]);
 
   // Layer filter state (lifted from ArchitectureMap)
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(["all"]));
@@ -469,13 +462,6 @@ export default function ArchitecturePage() {
     return layerStats.layers.filter((l) => activeFilters.has(l.key));
   }, [layerStats, activeFilters]);
 
-  const projectSummaryText = useMemo(() => {
-    const aiSummary = onboarding?.plainEnglish?.trim();
-    if (aiSummary) return aiSummary;
-    if (!city) return "";
-    return `This project is a ${city.city.language} ${city.city.architecture} application using ${city.city.framework}, organized into ${city.city.districts.length} modules.`;
-  }, [onboarding, city]);
-
   // Loading screen
   if (!city) {
     return (
@@ -517,6 +503,15 @@ export default function ArchitecturePage() {
                 {city.city.name}
               </span>
             </div>
+            {onboarding?.plainEnglish && (
+              <button
+                type="button"
+                onClick={() => setShowSummaryPopup(true)}
+                className="hidden rounded-lg border border-cyan-400/45 bg-cyan-900/30 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:border-cyan-300/70 hover:bg-cyan-900/50 sm:inline-flex"
+              >
+                Summary
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {onboarding?.guidedTour && onboarding.guidedTour.length > 0 && !tourActive && (
@@ -573,14 +568,6 @@ export default function ArchitecturePage() {
           </div>
         </div>
 
-        <div className="mb-3 rounded-xl border border-cyan-400/20 bg-slate-900/55 px-4 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200/90">
-            Project Summary
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-300 sm:text-sm">
-            {projectSummaryText}
-          </p>
-        </div>
       </div>
 
       {/* Layer filter row — full width, always stays in place */}
@@ -834,29 +821,12 @@ export default function ArchitecturePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
                   </svg>
                   <h2 className="text-xs font-semibold tracking-wide text-slate-200">Project Overview</h2>
-                  {/* Summary Button */}
-                  {onboarding && (
-                    <button
-                      className="ml-auto rounded border border-cyan-400/40 bg-cyan-900/20 px-2 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-800/40 hover:border-cyan-300/60 transition"
-                      onClick={() => setShowSummary(true)}
-                    >
-                      Summary
-                    </button>
-                  )}
                 </div>
-                {/* Summary and stats removed from here, now in popup only */}
-                      {/* Onboarding/Summary Popup */}
-                      {onboarding && showSummary && (
-                        <OnboardingOverlay
-                          onboarding={onboarding}
-                          onClose={() => setShowSummary(false)}
-                          onTourStart={handleTourStart}
-                          onBuildingFocus={(id) => {
-                            setShowSummary(false);
-                            setHighlightNodeId(id);
-                          }}
-                        />
-                      )}
+                <div className="border-b border-white/4 px-4 py-2">
+                  <span className="text-[10px] text-slate-500">
+                    {layerStats?.totalFiles ?? 0} files · {layerStats?.totalConnections ?? 0} connections
+                  </span>
+                </div>
                 {/* Layer cards */}
                 <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
                   {visibleLayerStats.map((layer) => (
@@ -1183,6 +1153,21 @@ export default function ArchitecturePage() {
           );
         })()}
       </div>
+
+      {onboarding?.plainEnglish && showSummaryPopup && (
+        <OnboardingOverlay
+          onboarding={onboarding}
+          onClose={() => setShowSummaryPopup(false)}
+          onTourStart={() => {
+            setShowSummaryPopup(false);
+            handleTourStart();
+          }}
+          onBuildingFocus={(buildingId) => {
+            setShowSummaryPopup(false);
+            setHighlightNodeId(buildingId);
+          }}
+        />
+      )}
     </div>
   );
 }
