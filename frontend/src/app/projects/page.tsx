@@ -314,7 +314,7 @@ export default function ProjectsPage() {
             <div className="h-full min-h-0 space-y-3 overflow-y-auto pr-1">
               <div>
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  Recent Cities
+                  Recent Repositories
                 </p>
                 <div className="space-y-1">
                   {filteredHistory.length === 0 && (

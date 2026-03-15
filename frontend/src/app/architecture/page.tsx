@@ -81,7 +81,7 @@ function DirTreeView({
 }
 
 export default function ArchitecturePage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const {
     city,
@@ -214,22 +214,24 @@ export default function ArchitecturePage() {
   };
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-[#070d17] text-slate-100">
-      {/* Top bar — matches Projects Workspace */}
-      <div className="z-20 shrink-0 border-b border-slate-700/40 bg-slate-950/90 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-6 py-3 md:px-10">
+    <div className="relative flex h-screen w-screen flex-col bg-[#070d17] text-slate-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(80,200,255,0.2),transparent_42%),radial-gradient(circle_at_84%_10%,rgba(64,255,192,0.15),transparent_38%)]" />
+
+      {/* Top bar — same structure as Projects Workspace */}
+      <div className="relative z-20 mx-auto w-full max-w-7xl px-6 py-8 pb-0 md:px-10 lg:px-14">
+        <div className="mb-5 flex items-center justify-between border-b border-slate-700/40 pb-4">
           <div className="flex items-center gap-4">
             <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent sm:text-4xl">
               Architecture Map
             </h1>
             <div className="hidden items-center gap-2 rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-1.5 sm:inline-flex">
-              <span className="font-mono text-sm font-medium text-cyan-100">
+              {session?.user?.image && (
+                <img src={session.user.image} alt="" className="h-6 w-6 rounded-full" />
+              )}
+              <span className="text-sm font-medium text-cyan-100">
                 {city.city.name}
               </span>
             </div>
-            <span className="hidden text-xs text-slate-500 md:inline">
-              {city.city.language} · {city.city.framework} · {city.city.architecture}
-            </span>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -240,17 +242,30 @@ export default function ArchitecturePage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>
               Files
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                resetCity();
-                router.push("/");
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
-              Home
-            </button>
+            {status === "authenticated" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push("/projects");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" /></svg>
+                Projects
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  resetCity();
+                  router.push("/");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+                Home
+              </button>
+            )}
             {status === "authenticated" && (
               <button
                 type="button"
