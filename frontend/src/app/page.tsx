@@ -150,18 +150,6 @@ export default function LandingPage() {
             <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
               Visualize files as nodes and dependencies as edges in a force-directed graph — spot hotspots and clusters instantly.
             </p>
-
-            <div className="mt-8 grid max-w-lg gap-3 sm:grid-cols-2">
-              {[
-                { label: "Graph View", value: "Force-directed node layout" },
-                { label: "Hotspots", value: "Risk-colored nodes at a glance" },
-              ].map((item) => (
-                <div key={item.label} className="rounded-2xl border border-slate-500/20 bg-slate-900/50 p-4 backdrop-blur-md">
-                  <p className="text-[11px] font-semibold tracking-[0.16em] text-cyan-200/85 uppercase">{item.label}</p>
-                  <p className="mt-2 text-sm text-slate-200">{item.value}</p>
-                </div>
-              ))}
-            </div>
           </section>
 
           <section className="animate-rise-in-late">
