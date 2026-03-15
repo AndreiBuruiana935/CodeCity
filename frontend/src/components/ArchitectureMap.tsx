@@ -3,16 +3,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import * as THREE from "three";
 import { CSS2DRenderer, CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
-import {
-  forceSimulation,
-  forceLink,
-  forceManyBody,
-  forceCollide,
-  forceCenter,
-  forceRadial,
-  type SimulationNodeDatum,
-  type SimulationLinkDatum,
-} from "d3-force";
 import type { CitySchema } from "@/types/city";
 
 /* ------------------------------------------------------------------ */
@@ -168,97 +158,70 @@ export function classifyLayer(
 }
 
 /* ------------------------------------------------------------------ */
-/*  D3-FORCE LAYOUT HELPERS                                            */
+/*  GRID LAYOUT                                                        */
 /* ------------------------------------------------------------------ */
 
-interface ForceNode extends SimulationNodeDatum {
-  id: string;
-  fanIn: number;
-}
-
-interface ForceLink extends SimulationLinkDatum<ForceNode> {
-  weight: number;
-}
-
 /**
- * Run a single d3-force simulation for a set of nodes within one layer.
- * Returns settled x/z positions (d3 x/y maps to our x/z).
+ * Even grid layout: places nodes in a uniform grid with equal spacing.
+ * Nodes are sorted so that connected ones end up near each other,
+ * but the grid itself is perfectly even — no clustering.
  */
-function runLayerForce(
+function runLayerLayout(
   layerNodes: { id: string; fanIn: number }[],
   layerEdges: { source: string; target: string; weight: number }[],
 ): Map<string, { x: number; z: number }> {
-  const NODE_RADIUS = 0.6;
+  const SPACING = 2.8; // minimum distance between node centers
 
   const count = layerNodes.length;
   if (count === 0) return new Map();
 
-  // Seed in a ring scaled to node count so the simulation has room
-  const seedRadius = Math.max(3, Math.sqrt(count) * 1.5);
-  const simNodes: ForceNode[] = layerNodes.map((n, i) => {
-    const angle = (i / count) * Math.PI * 2;
-    return {
-      id: n.id,
-      fanIn: n.fanIn,
-      x: Math.cos(angle) * seedRadius + (Math.random() - 0.5) * 0.5,
-      y: Math.sin(angle) * seedRadius + (Math.random() - 0.5) * 0.5,
-    };
-  });
-
-  const nodeById = new Map(simNodes.map((n) => [n.id, n]));
-
-  const simLinks: ForceLink[] = layerEdges
-    .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
-    .map((e) => ({
-      source: e.source,
-      target: e.target,
-      weight: e.weight,
-    }));
-
-  // Charge scales with count: more nodes need more repulsion to spread
-  const chargeStrength = -(15 + count * 1.2);
-
-  const sim = forceSimulation<ForceNode>(simNodes)
-    .force(
-      "link",
-      forceLink<ForceNode, ForceLink>(simLinks)
-        .id((d) => d.id)
-        .distance((d) => 3.0 + (1 / Math.max(d.weight, 0.2)) * 1.5)
-        .strength(0.5),
-    )
-    .force("charge", forceManyBody<ForceNode>().strength(chargeStrength))
-    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 1.4).strength(1.0).iterations(3))
-    .force("center", forceCenter<ForceNode>(0, 0).strength(0.1))
-    .stop();
-
-  // Hub nodes pulled toward center but not aggressively
-  if (simNodes.some((n) => n.fanIn > 5)) {
-    sim.force(
-      "radial",
-      forceRadial<ForceNode>(seedRadius * 0.3, 0, 0)
-        .strength((d) => (d.fanIn > 5 ? 0.3 : 0)),
-    );
+  // Sort nodes so connected ones are adjacent in the grid.
+  // Use a simple adjacency-count sort: high fan-in nodes first (center),
+  // then group by most-connected neighbor.
+  const adjacency = new Map<string, Set<string>>();
+  for (const n of layerNodes) adjacency.set(n.id, new Set());
+  for (const e of layerEdges) {
+    adjacency.get(e.source)?.add(e.target);
+    adjacency.get(e.target)?.add(e.source);
   }
 
-  // Run simulation
-  for (let i = 0; i < 300; i++) {
-    sim.tick();
-    if (sim.alpha() < 0.001) break;
+  // BFS-order from the highest fan-in node to keep connected files nearby
+  const sorted: string[] = [];
+  const visited = new Set<string>();
+  const byFanIn = [...layerNodes].sort((a, b) => b.fanIn - a.fanIn);
+
+  for (const seed of byFanIn) {
+    if (visited.has(seed.id)) continue;
+    const queue = [seed.id];
+    visited.add(seed.id);
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      sorted.push(curr);
+      const neighbors = [...(adjacency.get(curr) ?? [])].filter(n => !visited.has(n));
+      // Sort neighbors by fan-in descending so important ones come first
+      neighbors.sort((a, b) => {
+        const fa = layerNodes.find(n => n.id === a)?.fanIn ?? 0;
+        const fb = layerNodes.find(n => n.id === b)?.fanIn ?? 0;
+        return fb - fa;
+      });
+      for (const n of neighbors) {
+        visited.add(n);
+        queue.push(n);
+      }
+    }
   }
 
-  // DON'T normalize — let the natural force layout determine spread.
-  // Only apply a gentle cap if the extent is crazy.
-  const maxAllowed = Math.max(8, Math.sqrt(count) * 2.5);
-  let maxR = 0;
-  for (const n of simNodes) {
-    const r = Math.sqrt((n.x ?? 0) ** 2 + (n.y ?? 0) ** 2);
-    maxR = Math.max(maxR, r);
-  }
-  const scale = maxR > maxAllowed ? maxAllowed / maxR : 1;
+  // Place in a grid centered on (0, 0)
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.3)));
+  const rows = Math.ceil(count / cols);
 
   const result = new Map<string, { x: number; z: number }>();
-  for (const n of simNodes) {
-    result.set(n.id, { x: (n.x ?? 0) * scale, z: (n.y ?? 0) * scale });
+  for (let i = 0; i < sorted.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = (col - (cols - 1) / 2) * SPACING;
+    const z = (row - (rows - 1) / 2) * SPACING;
+    result.set(sorted[i], { x, z });
   }
   return result;
 }
@@ -340,7 +303,7 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
       .filter((c) => layerNodeIds.has(c.a) && layerNodeIds.has(c.b))
       .map((c) => ({ source: c.a, target: c.b, weight: c.weight }));
 
-    const positions = runLayerForce(
+    const positions = runLayerLayout(
       layerNodes.map((n) => ({ id: n.id, fanIn: n.fanIn ?? 0 })),
       layerEdges,
     );
@@ -369,10 +332,10 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
 /* ------------------------------------------------------------------ */
 
 export const LAYERS: Record<string, { y: number; c: number; name: string }> = {
-  db:  { y: -15, c: 0xba7517, name: "database" },
-  be:  { y: -5,  c: 0x1d9e75, name: "backend" },
-  api: { y: 5,   c: 0x7f77dd, name: "api" },
-  fe:  { y: 15,  c: 0xd85a30, name: "frontend" },
+  db:  { y: -10.5, c: 0xba7517, name: "database" },
+  be:  { y: -3.5,  c: 0x1d9e75, name: "backend" },
+  api: { y: 3.5,   c: 0x7f77dd, name: "api" },
+  fe:  { y: 10.5,  c: 0xd85a30, name: "frontend" },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1056,8 +1019,6 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     const cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string; type: ConnType; weight: number }[] = [];
 
     // Precompute node layer map for edge coloring
-    const nodeLayerMap = new Map<string, string>();
-    ND.forEach((n) => nodeLayerMap.set(n.id, n.l));
 
     CO.forEach((conn, i) => {
       const { a, b, type, weight } = conn;
@@ -1078,48 +1039,16 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       const tubeRadius = Math.min(0.025 + weight * 0.012, 0.12);
       const tubeGeo = new THREE.TubeGeometry(curve, 30, tubeRadius, 6, false);
 
-      // Determine tube color and opacity based on type
-      let tubeColor: number;
-      let tubeOpacity: number;
-
-      const sourceLayer = nodeLayerMap.get(a) ?? "api";
-      const targetLayer = nodeLayerMap.get(b) ?? "api";
-
-      switch (type) {
-        case "cross-layer": {
-          // Vertex color gradient from source to target layer color
-          const srcColor = new THREE.Color(LAYERS[sourceLayer]?.c ?? 0x7f77dd);
-          const tgtColor = new THREE.Color(LAYERS[targetLayer]?.c ?? 0x7f77dd);
-          const positions = tubeGeo.attributes.position;
-          const colors = new Float32Array(positions.count * 3);
-          const tempColor = new THREE.Color();
-          for (let vi = 0; vi < positions.count; vi++) {
-            // Approximate interpolation along tube length
-            const t = vi / Math.max(positions.count - 1, 1);
-            tempColor.copy(srcColor).lerp(tgtColor, t);
-            colors[vi * 3] = tempColor.r;
-            colors[vi * 3 + 1] = tempColor.g;
-            colors[vi * 3 + 2] = tempColor.b;
-          }
-          tubeGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-          tubeColor = 0xffffff; // Base white, vertex colors will override
-          tubeOpacity = 0.55;
-          break;
-        }
-        case "circular":
-          tubeColor = 0xef4444;
-          tubeOpacity = 0.50;
-          break;
-        case "type-import":
-          tubeColor = 0x888888;
-          tubeOpacity = 0.25;
-          break;
-        case "import":
-        default:
-          tubeColor = LAYERS[sourceLayer]?.c ?? 0x3d7acc;
-          tubeOpacity = 0.30;
-          break;
-      }
+      // Fixed color per connection type — no per-edge variation
+      const CONN_COLORS: Record<ConnType, { color: number; opacity: number }> = {
+        "cross-layer": { color: 0x7f77dd, opacity: 0.50 },
+        "circular":    { color: 0xef4444, opacity: 0.50 },
+        "type-import": { color: 0x888888, opacity: 0.30 },
+        "import":      { color: 0x3b82f6, opacity: 0.35 },
+      };
+      const style = CONN_COLORS[type] ?? CONN_COLORS.import;
+      const tubeColor = style.color;
+      const tubeOpacity = style.opacity;
 
       const tubeMat = new THREE.MeshStandardMaterial({
         color: tubeColor,
@@ -1127,7 +1056,6 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         opacity: tubeOpacity,
         metalness: 0.1,
         roughness: 0.7,
-        vertexColors: type === "cross-layer",
         side: THREE.DoubleSide,
       });
 
@@ -1189,7 +1117,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     }
 
     /* state object */
-    const initialRr = Math.max(28, Math.min(45, gridExtent * 1.2));
+    const initialRr = Math.max(32, Math.min(50, gridExtent * 1.4));
     const s: NonNullable<typeof sceneRef.current> = {
       renderer,
       css2dRenderer,
