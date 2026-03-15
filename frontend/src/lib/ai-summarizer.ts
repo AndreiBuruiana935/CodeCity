@@ -2,6 +2,30 @@ import { Building, CitySchema, OnboardingSummary } from "@/types/city";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const SUMMARY_MAX_FILES = envInt("AI_SUMMARY_MAX_FILES", 180);
+const SUMMARY_CHUNK_SIZE = envInt("AI_SUMMARY_CHUNK_SIZE", 60);
+const ONBOARDING_MAX_FILES = envInt("AI_ONBOARDING_MAX_FILES", 12);
+
+function toCompactSummaryBuilding(b: Building) {
+  return {
+    path: b.path,
+    entryPoint: b.entryPoint,
+    securitySensitive: b.securitySensitive,
+    riskScore: b.riskScore,
+    complexity: b.complexity,
+    dependencyCount: b.dependencyCount,
+    linesOfCode: b.linesOfCode,
+    functions: b.functions.slice(0, 4).map((f) => f.name),
+  };
+}
+
 function fallbackSummaryFromPrompt(b: Building): string {
   const parts: string[] = [];
   if (b.entryPoint)
@@ -45,32 +69,27 @@ export async function summarizeBuildings(
   });
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/summarize-batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        buildings: prioritized.slice(0, 500).map((b) => ({
-          path: b.path,
-          entryPoint: b.entryPoint,
-          securitySensitive: b.securitySensitive,
-          riskScore: b.riskScore,
-          complexity: b.complexity,
-          dependencyCount: b.dependencyCount,
-          linesOfCode: b.linesOfCode,
-          functions: b.functions.slice(0, 8).map((f) => f.name),
-        })),
-        repoName,
-        language,
-      }),
-    });
+    const toSend = prioritized.slice(0, SUMMARY_MAX_FILES);
+    for (let i = 0; i < toSend.length; i += SUMMARY_CHUNK_SIZE) {
+      const chunk = toSend.slice(i, i + SUMMARY_CHUNK_SIZE);
+      const res = await fetch(`${BACKEND_URL}/api/summarize-batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buildings: chunk.map(toCompactSummaryBuilding),
+          repoName,
+          language,
+        }),
+      });
 
-    if (res.ok) {
+      if (!res.ok) continue;
+
       const data = await res.json();
-      if (data.summaries) {
-        for (const [path, summary] of Object.entries(data.summaries)) {
-          if (typeof summary === "string") {
-            summaries.set(path, summary);
-          }
+      if (!data.summaries) continue;
+
+      for (const [path, summary] of Object.entries(data.summaries)) {
+        if (typeof summary === "string") {
+          summaries.set(path, summary);
         }
       }
     }
@@ -182,10 +201,33 @@ export async function generateAIOnboarding(
   buildings: Building[]
 ): Promise<string> {
   try {
+    const topRisk = [...buildings]
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, ONBOARDING_MAX_FILES)
+      .map((b) => ({
+        path: b.path,
+        riskScore: b.riskScore,
+        complexity: b.complexity,
+        dependencyCount: b.dependencyCount,
+        entryPoint: b.entryPoint,
+        securitySensitive: b.securitySensitive,
+      }));
+
+    const compactCity = {
+      name: city.city.name,
+      language: city.city.language,
+      framework: city.city.framework,
+      architecture: city.city.architecture,
+      districtCount: city.city.districts.length,
+      districtNames: city.city.districts.slice(0, 40).map((d) => d.name),
+      hotspotCount: city.city.hotspots.length,
+      entryPointCount: city.city.entryPoints.length,
+    };
+
     const res = await fetch(`${BACKEND_URL}/api/generate-onboarding`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ city, buildings: buildings.slice(0, 20) }),
+      body: JSON.stringify({ city: compactCity, buildings: topRisk }),
     });
 
     if (res.ok) {

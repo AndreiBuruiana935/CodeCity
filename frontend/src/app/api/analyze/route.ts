@@ -50,21 +50,13 @@ export async function POST(req: NextRequest) {
       githubToken: effectiveToken,
     });
 
-    // AI-powered enrichment — all three run in parallel
-    // Summaries use 7B (1 unit ×2 concurrent = 2u), Onboarding 7B (1u), Cartographer 32B (2u)
-    // Peak = 5 units vs 4 limit, handled by backend 429 retry-with-backoff
+    // AI enrichment is staged to respect Featherless concurrency capacity.
+    // Stage 1: Cartographer (2 units). Stage 2: Summaries + Onboarding (1 + 1 units).
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
-    const [summariesResult, onboardingResult, mapResult] = await Promise.allSettled([
-      withTimeout(
-        summarizeBuildings(allBuildings, `${owner}/${repo}`, city.city.language),
-        120000
-      ),
-      withTimeout(
-        generateAIOnboarding(city, allBuildings),
-        60000
-      ),
-      withTimeout(
+    let mapResult: PromiseSettledResult<Response>;
+    try {
+      const mapRes = await withTimeout(
         fetch(`${BACKEND_URL}/api/map-repository`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -74,6 +66,20 @@ export async function POST(req: NextRequest) {
           }),
         }),
         150000
+      );
+      mapResult = { status: "fulfilled", value: mapRes };
+    } catch (error) {
+      mapResult = { status: "rejected", reason: error };
+    }
+
+    const [summariesResult, onboardingResult] = await Promise.allSettled([
+      withTimeout(
+        summarizeBuildings(allBuildings, `${owner}/${repo}`, city.city.language),
+        120000
+      ),
+      withTimeout(
+        generateAIOnboarding(city, allBuildings),
+        60000
       ),
     ]);
 

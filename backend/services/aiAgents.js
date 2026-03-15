@@ -29,6 +29,12 @@ const SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL
 
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS, 10) || 90000;
 
+function _envInt(name, fallback) {
+  const raw = process.env[name];
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 // ════════════════════════════════════════════════════════════════
 // IN-MEMORY CACHE WITH TTL
 // ════════════════════════════════════════════════════════════════
@@ -528,9 +534,9 @@ async function summarizeFile(building) {
 
 // ── Chunked batch summarisation (handles repos up to ~1 000 files) ──
 
-const BATCH_CHUNK_SIZE = 50;
-const BATCH_MAX_CONCURRENT = 2;
-const BATCH_MAX_BUILDINGS = 500;
+const BATCH_CHUNK_SIZE = _envInt('SUMMARIZER_CHUNK_SIZE', 40);
+const BATCH_MAX_CONCURRENT = _envInt('SUMMARIZER_MAX_CONCURRENT', 1);
+const BATCH_MAX_BUILDINGS = _envInt('SUMMARIZER_MAX_BUILDINGS', 300);
 
 async function _summarizeOneChunk(chunkBuildings, repoName, language, chunkIdx) {
   const cacheKey = _getCacheKey(`summarizer-chunk-${chunkIdx}`, {

@@ -10,7 +10,9 @@ const { mapRepository, inspectFile, askGuide, summarizeFile, summarizeBatch, gen
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || '2mb';
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
 // ════════════════════════════════════════════════════════════════
 // PERFORMANCE OPTIMIZATIONS
@@ -199,6 +201,15 @@ app.post('/api/clear-cache', (req, res) => {
     console.error('[POST /api/clear-cache]', err.message);
     return res.status(500).json({ error: err.message });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: `Payload too large. Reduce request size or increase REQUEST_BODY_LIMIT (current: ${REQUEST_BODY_LIMIT}).`
+    });
+  }
+  return next(err);
 });
 
 app.listen(PORT, () => {

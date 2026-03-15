@@ -18,6 +18,13 @@ import {
   GitHubFile,
 } from "./github";
 
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function detectLanguage(files: GitHubFile[]): string {
   const extCount: Record<string, number> = {};
   for (const f of files) {
@@ -235,19 +242,35 @@ export async function generateCity(
   const language = detectLanguage(files);
   const framework = detectFramework(files);
   const architecture = detectArchitecture(files);
+  const repoTier =
+    files.length > 1200 ? "very-large"
+    : files.length > 600 ? "large"
+    : files.length > 200 ? "medium"
+    : "small";
 
   // In full mode, analyze all eligible in-repo code files deterministically.
   // Reserve a few requests for retries and API calls outside blob fetches.
   const availableRequests = Math.max(0, rateLimit.remaining - 5);
-  const filesToProcess = depth === "shallow" ? files.slice(0, 200) : files;
+  const shallowMaxFiles = envInt("ANALYSIS_SHALLOW_MAX_FILES", 200);
+  const fullMaxFiles = envInt("ANALYSIS_FULL_MAX_FILES", 1200);
+  const filesToProcess = depth === "shallow"
+    ? files.slice(0, shallowMaxFiles)
+    : files.slice(0, fullMaxFiles);
   const eligibleContentFiles = filesToProcess.filter(
     (f) => !isBinaryFile(f.path) && isCodeFile(f.path)
   );
 
+  const defaultFullCodeCap =
+    repoTier === "very-large" ? 500
+    : repoTier === "large" ? 700
+    : 900;
+  const fullCodeCap = envInt("ANALYSIS_FULL_CODE_CAP", defaultFullCodeCap);
+  const shallowCodeCap = envInt("ANALYSIS_SHALLOW_CODE_CAP", 30);
+
   const requestedContentFetches =
     depth === "shallow"
-      ? Math.min(30, eligibleContentFiles.length)
-      : eligibleContentFiles.length;
+      ? Math.min(shallowCodeCap, eligibleContentFiles.length)
+      : Math.min(fullCodeCap, eligibleContentFiles.length);
 
   if (depth === "full" && requestedContentFetches > availableRequests) {
     throw new Error(
@@ -281,7 +304,13 @@ export async function generateCity(
   const buildingsByPath = new Map<string, Building>();
 
   // Process files: fetch content only for prioritized ones
-  const BATCH_SIZE = depth === "shallow" ? 15 : 10;
+  const defaultBatchSize =
+    depth === "shallow"
+      ? 12
+      : repoTier === "very-large" ? 4
+      : repoTier === "large" ? 6
+      : 8;
+  const BATCH_SIZE = envInt("ANALYSIS_FETCH_BATCH_SIZE", defaultBatchSize);
 
   // Split into content-fetch group and metadata-only group
   const contentFiles = filesToProcess.filter((f) => fetchSet.has(f.path));
