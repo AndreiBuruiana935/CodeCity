@@ -7,6 +7,7 @@ import { useAppContext } from "@/components/AppContext";
 import dynamic from "next/dynamic";
 import type { ArchSelection } from "@/components/ArchitectureMap";
 import { classifyLayer, FILTER_BUTTONS, LAYERS } from "@/components/ArchitectureMap";
+import NavigatorChat from "@/components/NavigatorChat";
 import { parseRepoUrl } from "@/lib/github";
 import type { Building } from "@/types/city";
 
@@ -719,59 +720,7 @@ export default function ArchitecturePage() {
                   )}
                 </div>
 
-                {/* ── Right column: AI Chat (fixed height, scrollable inside) ── */}
-                <div className="flex w-[38%] shrink-0 flex-col">
-                  {/* Chat header */}
-                  <div className="flex items-center gap-2.5 border-b border-slate-700/40 px-5 py-3">
-                    <svg className="h-5 w-5 text-cyan-400/80" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
-                    </svg>
-                    <span className="text-sm font-semibold tracking-wide text-slate-200">AI Assistant</span>
-                    {selectedBuilding && <span className="ml-auto truncate text-xs text-slate-500">{selectedBuilding.filename}</span>}
-                  </div>
-
-                  {/* Chat messages — scrollable within fixed container */}
-                  <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
-                    {chatMessages.map((msg, i) => (
-                      <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                          msg.role === "user"
-                            ? "bg-cyan-500/15 text-cyan-100"
-                            : "bg-slate-800/60 text-slate-300"
-                        }`}>
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {chatLoading && (
-                      <div className="flex justify-start">
-                        <div className="flex items-center gap-2.5 rounded-2xl bg-slate-800/60 px-4 py-3 text-sm text-slate-400">
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-300/40 border-t-cyan-200" />
-                          Thinking...
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Chat input */}
-                  <form onSubmit={handleChatSubmit} className="flex items-center gap-3 border-t border-slate-700/40 px-5 py-3">
-                    <input
-                      ref={chatInputRef}
-                      type="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={selectedBuilding ? "Ask about this file..." : "Ask about the architecture..."}
-                      className="min-w-0 flex-1 rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 outline-none transition focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/20"
-                    />
-                    <button
-                      type="submit"
-                      disabled={chatLoading || !chatInput.trim()}
-                      className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-5 py-2.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300/60 hover:bg-cyan-400/20 disabled:opacity-40"
-                    >
-                      Send
-                    </button>
-                  </form>
-                </div>
+                <NavigatorChat city={city} onboarding={onboarding} />
               </div>
             </div>
           );

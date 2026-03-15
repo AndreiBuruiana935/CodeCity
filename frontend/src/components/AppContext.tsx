@@ -15,6 +15,8 @@ interface AppContextValue {
   setCity: React.Dispatch<React.SetStateAction<CitySchema | null>>;
   onboarding: OnboardingSummary | null;
   setOnboarding: React.Dispatch<React.SetStateAction<OnboardingSummary | null>>;
+  analystReport: Record<string, unknown> | null;
+  setAnalystReport: React.Dispatch<React.SetStateAction<Record<string, unknown> | null>>;
 
   // Selection state
   selectedBuilding: Building | null;
@@ -82,6 +84,7 @@ export function useAppContext() {
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [city, setCity] = useState<CitySchema | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingSummary | null>(null);
+  const [analystReport, setAnalystReport] = useState<Record<string, unknown> | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [selectedDistrictId, setSelectedDistrictId] = useState<string | null>(null);
   const [highlightedBuildings, setHighlightedBuildings] = useState<string[]>([]);
@@ -331,6 +334,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const resetCity = useCallback(() => {
     setCity(null);
     setOnboarding(null);
+    setAnalystReport(null);
     setSelectedBuilding(null);
     setSelectedDistrictId(null);
     setHighlightedBuildings([]);
@@ -341,6 +345,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const softResetCity = useCallback(() => {
     setCity(null);
     setOnboarding(null);
+    setAnalystReport(null);
     setSelectedBuilding(null);
     setSelectedDistrictId(null);
     setHighlightedBuildings([]);
@@ -352,6 +357,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value: AppContextValue = {
     city, setCity,
     onboarding, setOnboarding,
+    analystReport, setAnalystReport,
     selectedBuilding, setSelectedBuilding,
     selectedDistrictId, setSelectedDistrictId,
     highlightedBuildings, setHighlightedBuildings,
