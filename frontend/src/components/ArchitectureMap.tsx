@@ -223,11 +223,11 @@ function runLayerForce(
       "link",
       forceLink<ForceNode, ForceLink>(simLinks)
         .id((d) => d.id)
-        .distance((d) => 2.0 + (1 / Math.max(d.weight, 0.2)) * 1.0)
+        .distance((d) => 3.0 + (1 / Math.max(d.weight, 0.2)) * 1.5)
         .strength(0.5),
     )
     .force("charge", forceManyBody<ForceNode>().strength(chargeStrength))
-    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 0.7).strength(1.0).iterations(2))
+    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 1.4).strength(1.0).iterations(3))
     .force("center", forceCenter<ForceNode>(0, 0).strength(0.1))
     .stop();
 
@@ -369,10 +369,10 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
 /* ------------------------------------------------------------------ */
 
 export const LAYERS: Record<string, { y: number; c: number; name: string }> = {
-  db:  { y: -9,  c: 0xba7517, name: "database" },
-  be:  { y: -3,  c: 0x1d9e75, name: "backend" },
-  api: { y: 3,   c: 0x7f77dd, name: "api" },
-  fe:  { y: 9,   c: 0xd85a30, name: "frontend" },
+  db:  { y: -15, c: 0xba7517, name: "database" },
+  be:  { y: -5,  c: 0x1d9e75, name: "backend" },
+  api: { y: 5,   c: 0x7f77dd, name: "api" },
+  fe:  { y: 15,  c: 0xd85a30, name: "frontend" },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -750,7 +750,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.gtx = mesh.position.x;
       s.gty = mesh.position.y;
       s.gtz = mesh.position.z;
-      s.grr = Math.min(s.rr, 16);
+      s.grr = Math.min(s.rr, 20);
     } else {
       onSelectRef.current?.(null);
 
@@ -879,25 +879,36 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     dl2.position.set(-8, -4, -6);
     scene.add(dl2);
 
-    /* layer planes + grids */
+    /* layer platforms — solid slabs with grid on top */
+    const PLATFORM_THICKNESS = 0.15;
     Object.values(LAYERS).forEach((l) => {
-      const g = new THREE.GridHelper(gridExtent, gridDivisions, l.c, l.c);
-      (g.material as THREE.Material).opacity = 0.05;
-      (g.material as THREE.Material).transparent = true;
-      g.position.y = l.y;
-      scene.add(g);
-
-      const pg = new THREE.PlaneGeometry(gridExtent, gridExtent);
-      const pm = new THREE.MeshBasicMaterial({
+      // Solid platform slab
+      const slabGeo = new THREE.BoxGeometry(gridExtent, PLATFORM_THICKNESS, gridExtent);
+      const slabMat = new THREE.MeshStandardMaterial({
         color: l.c,
         transparent: true,
-        opacity: 0.015,
-        side: THREE.DoubleSide,
+        opacity: 0.18,
+        metalness: 0.3,
+        roughness: 0.8,
       });
-      const pp = new THREE.Mesh(pg, pm);
-      pp.rotation.x = -Math.PI / 2;
-      pp.position.y = l.y;
-      scene.add(pp);
+      const slab = new THREE.Mesh(slabGeo, slabMat);
+      slab.position.y = l.y - PLATFORM_THICKNESS / 2;
+      slab.receiveShadow = true;
+      scene.add(slab);
+
+      // Grid lines on top of the slab
+      const g = new THREE.GridHelper(gridExtent, gridDivisions, l.c, l.c);
+      (g.material as THREE.Material).opacity = 0.12;
+      (g.material as THREE.Material).transparent = true;
+      g.position.y = l.y + 0.01;
+      scene.add(g);
+
+      // Thin edge border ring to make the platform edges visible
+      const edgeGeo = new THREE.EdgesGeometry(slabGeo);
+      const edgeMat = new THREE.LineBasicMaterial({ color: l.c, transparent: true, opacity: 0.25 });
+      const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+      edgeLine.position.y = l.y - PLATFORM_THICKNESS / 2;
+      scene.add(edgeLine);
     });
 
     /* nodes */
@@ -1178,7 +1189,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     }
 
     /* state object */
-    const initialRr = Math.max(18, Math.min(32, gridExtent * 0.9));
+    const initialRr = Math.max(28, Math.min(45, gridExtent * 1.2));
     const s: NonNullable<typeof sceneRef.current> = {
       renderer,
       css2dRenderer,
@@ -1318,7 +1329,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      s.rr = Math.max(6, Math.min(100, s.rr + e.deltaY * 0.06));
+      s.rr = Math.max(8, Math.min(120, s.rr + e.deltaY * 0.08));
       s.grr = s.rr;
       updateCamera(s);
     }
@@ -1422,7 +1433,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
          Only labels close to the camera target AND within zoom range are shown.
          This prevents the label soup effect. */
       const camDist = s.cam.position.distanceTo(new THREE.Vector3(s.tx, s.ty, s.tz));
-      const globalFade = clamp((35 - camDist) / 18, 0, 1);
+      const globalFade = clamp((45 - camDist) / 20, 0, 1);
       const camTarget = new THREE.Vector3(s.tx, s.ty, s.tz);
 
       s.css2dLabels.forEach(({ el, obj }) => {
@@ -1435,7 +1446,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         obj.getWorldPosition(worldPos);
         const distToTarget = worldPos.distanceTo(camTarget);
         // Labels within 8 units of camera target: full, then fade to 0 by 16 units
-        const proximityFade = clamp((16 - distToTarget) / 8, 0, 1);
+        const proximityFade = clamp((20 - distToTarget) / 10, 0, 1);
         // Selected/hovered labels always visible when zoomed in
         const isSelected = s.selectedId === el.dataset.nodeId;
         const finalOpacity = isSelected ? globalFade : globalFade * proximityFade;
