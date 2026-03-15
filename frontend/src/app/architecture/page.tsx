@@ -251,6 +251,24 @@ export default function ArchitecturePage() {
     return city.city.districts.flatMap(d => d.buildings).find(b => b.id === selected.id) ?? null;
   }, [city, selected]);
 
+  // Compute enriched stats for selected building (fan-in, fan-out, circular, orphan, hotspot)
+  const selectedStats = useMemo(() => {
+    if (!city || !selectedBuilding) return null;
+    const roads = city.city.roads;
+    const fanIn = roads.filter(r => r.to === selectedBuilding.id).length;
+    const fanOut = roads.filter(r => r.from === selectedBuilding.id).length;
+    const isOrphan = fanIn === 0 && fanOut === 0;
+    const isHotspot = (city.city.hotspots ?? []).includes(selectedBuilding.id);
+    const isEntry = selectedBuilding.entryPoint || (city.city.entryPoints ?? []).includes(selectedBuilding.id);
+    // circular: any road A→B where B→A also exists
+    const outTargets = roads.filter(r => r.from === selectedBuilding.id).map(r => r.to);
+    const inSources = roads.filter(r => r.to === selectedBuilding.id).map(r => r.from);
+    const circularWith = outTargets.filter(t => inSources.includes(t));
+    const allBuildings = city.city.districts.flatMap(d => d.buildings);
+    const circularNames = circularWith.map(cid => allBuildings.find(b => b.id === cid)?.filename).filter(Boolean) as string[];
+    return { fanIn, fanOut, isOrphan, isHotspot, isEntry, circularWith, circularNames };
+  }, [city, selectedBuilding]);
+
   // Build GitHub URL for "See Code"
   const githubFileUrl = useMemo(() => {
     if (!repoUrl || !selectedBuilding) return null;
@@ -609,6 +627,10 @@ export default function ArchitecturePage() {
                       { label: "Complexity", value: b.complexity },
                       { label: "Deps", value: b.dependencyCount },
                       { label: "Functions", value: b.functions.length },
+                      ...(selectedStats ? [
+                        { label: "Fan-in", value: selectedStats.fanIn },
+                        { label: "Fan-out", value: selectedStats.fanOut },
+                      ] : []),
                     ].map(m => (
                       <div key={m.label} className="flex items-baseline gap-1.5">
                         <span className="text-[10px] text-slate-500">{m.label}</span>
@@ -705,6 +727,75 @@ export default function ArchitecturePage() {
                               </li>
                             ))}
                           </ul>
+                        </AccordionSection>
+                      )}
+
+                      {/* Health & Connectivity section */}
+                      {selectedStats && (
+                        <AccordionSection id="health" label="Health &amp; Connectivity" open={openSections.has("health")} onToggle={toggleSection}>
+                          <div className="space-y-2">
+                            {/* Status badges */}
+                            <div className="flex flex-wrap gap-1.5">
+                              {selectedStats.isHotspot && (
+                                <span className="rounded-full border border-red-500/40 bg-red-900/20 px-2 py-0.5 text-[10px] font-medium text-red-300">Hotspot</span>
+                              )}
+                              {selectedStats.isEntry && (
+                                <span className="rounded-full border border-sky-400/40 bg-sky-900/20 px-2 py-0.5 text-[10px] font-medium text-sky-300">Entry Point</span>
+                              )}
+                              {b.securitySensitive && (
+                                <span className="rounded-full border border-purple-400/40 bg-purple-900/20 px-2 py-0.5 text-[10px] font-medium text-purple-300">Security-Sensitive</span>
+                              )}
+                              {selectedStats.isOrphan && (
+                                <span className="rounded-full border border-slate-500/40 bg-slate-800/40 px-2 py-0.5 text-[10px] font-medium text-slate-400">Orphan (no connections)</span>
+                              )}
+                              {selectedStats.circularWith.length > 0 && (
+                                <span className="rounded-full border border-orange-500/40 bg-orange-900/20 px-2 py-0.5 text-[10px] font-medium text-orange-300">Circular Deps</span>
+                              )}
+                            </div>
+
+                            {/* Fan-in / Fan-out detail */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="rounded-md border border-slate-700/50 bg-slate-900/60 px-2.5 py-1.5">
+                                <div className="text-[9px] uppercase text-slate-500">Fan-in</div>
+                                <div className="text-lg font-bold text-white">{selectedStats.fanIn}</div>
+                                <div className="text-[10px] text-slate-500">files depend on this</div>
+                              </div>
+                              <div className="rounded-md border border-slate-700/50 bg-slate-900/60 px-2.5 py-1.5">
+                                <div className="text-[9px] uppercase text-slate-500">Fan-out</div>
+                                <div className="text-lg font-bold text-white">{selectedStats.fanOut}</div>
+                                <div className="text-[10px] text-slate-500">dependencies imported</div>
+                              </div>
+                            </div>
+
+                            {/* Circular dependency details */}
+                            {selectedStats.circularWith.length > 0 && (
+                              <div className="rounded-md border border-orange-500/20 bg-orange-950/10 px-2.5 py-2">
+                                <div className="mb-1 text-[10px] font-semibold text-orange-300">Circular Dependencies</div>
+                                <div className="space-y-0.5">
+                                  {selectedStats.circularNames.map((name, i) => (
+                                    <div key={i} className="flex items-center gap-1.5 text-[11px] text-orange-200/80">
+                                      <span className="text-orange-400">↻</span>
+                                      <span className="font-mono">{name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Coupling assessment */}
+                            {(() => {
+                              const totalConns = selectedStats.fanIn + selectedStats.fanOut;
+                              const coupling = totalConns > 15 ? "Very High" : totalConns > 8 ? "High" : totalConns > 3 ? "Moderate" : "Low";
+                              const couplingColor = totalConns > 15 ? "text-red-400" : totalConns > 8 ? "text-orange-400" : totalConns > 3 ? "text-yellow-400" : "text-green-400";
+                              return (
+                                <div className="flex items-baseline gap-2 pt-1">
+                                  <span className="text-[10px] text-slate-500">Coupling:</span>
+                                  <span className={`text-xs font-semibold ${couplingColor}`}>{coupling}</span>
+                                  <span className="text-[10px] text-slate-600">({totalConns} total connections)</span>
+                                </div>
+                              );
+                            })()}
+                          </div>
                         </AccordionSection>
                       )}
                     </div>

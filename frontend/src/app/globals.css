@@ -25,6 +25,21 @@
   font-size: 11px;
 }
 
+.arch-layer-label {
+  position: absolute;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: sans-serif;
+  pointer-events: none;
+  opacity: 0.55;
+  text-shadow: 0 0 8px currentColor;
+}
+
 html,
 body {
   margin: 0;

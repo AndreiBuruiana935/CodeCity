@@ -15,6 +15,16 @@ interface NodeDef {
   x: number;
   z: number;
   loc?: number;
+  /* optional enrichment — only present for dynamic (city) data */
+  risk?: number;
+  hotspot?: boolean;
+  entryPoint?: boolean;
+  security?: boolean;
+  fanIn?: number;
+  fanOut?: number;
+  orphan?: boolean;
+  circular?: boolean;
+  colorLabel?: string;
 }
 
 type Conn = [string, string];
@@ -153,15 +163,49 @@ export function classifyLayer(path: string): "db" | "be" | "api" | "fe" {
 
 function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: number } {
   const allBuildings = city.city.districts.flatMap((d) => d.buildings);
+  const hotspotSet = new Set(city.city.hotspots ?? []);
+  const entrySet = new Set(city.city.entryPoints ?? []);
 
-  const ND: NodeDef[] = allBuildings.map((b) => ({
-    id: b.id,
-    lb: b.filename,
-    l: classifyLayer(b.path),
-    x: 0,
-    z: 0,
-    loc: b.linesOfCode || 0,
-  }));
+  /* compute fan-in / fan-out from roads */
+  const fanInMap: Record<string, number> = {};
+  const fanOutMap: Record<string, number> = {};
+  const pairSet = new Set<string>();
+  for (const r of city.city.roads) {
+    fanOutMap[r.from] = (fanOutMap[r.from] || 0) + 1;
+    fanInMap[r.to] = (fanInMap[r.to] || 0) + 1;
+    pairSet.add(`${r.from}::${r.to}`);
+  }
+
+  /* detect circular (bidirectional) dependencies */
+  const circularIds = new Set<string>();
+  for (const r of city.city.roads) {
+    if (pairSet.has(`${r.to}::${r.from}`)) {
+      circularIds.add(r.from);
+      circularIds.add(r.to);
+    }
+  }
+
+  const ND: NodeDef[] = allBuildings.map((b) => {
+    const fi = fanInMap[b.id] || 0;
+    const fo = fanOutMap[b.id] || 0;
+    return {
+      id: b.id,
+      lb: b.filename,
+      l: classifyLayer(b.path),
+      x: 0,
+      z: 0,
+      loc: b.linesOfCode || 0,
+      risk: b.riskScore,
+      hotspot: hotspotSet.has(b.id),
+      entryPoint: b.entryPoint || entrySet.has(b.id),
+      security: b.securitySensitive,
+      fanIn: fi,
+      fanOut: fo,
+      orphan: fi === 0 && fo === 0,
+      circular: circularIds.has(b.id),
+      colorLabel: b.colorLabel,
+    };
+  });
 
   // position nodes per layer
   const byLayer: Record<string, NodeDef[]> = { db: [], be: [], api: [], fe: [] };
@@ -234,6 +278,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(["all"]));
   const [selData, setSelData] = useState<{ lb: string; lname: string; cnt: number } | null>(null);
+  const [legendOpen, setLegendOpen] = useState(true);
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -261,7 +306,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     ll: THREE.Line[];
     cr: { curve: THREE.QuadraticBezierCurve3; a: string; b: string }[];
     pts: { m: THREE.Mesh; curve: THREE.QuadraticBezierCurve3; t: number; s: number }[];
-    labels: Record<string, HTMLDivElement>;
+    layerLabels: { el: HTMLDivElement; pos: THREE.Vector3 }[];
     ph: number;
     th: number;
     rr: number;
@@ -343,7 +388,9 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           ([a, b]) =>
             (a === ud.id && b === nud.id) || (b === ud.id && a === nud.id),
         );
-        (n.material as THREE.MeshStandardMaterial).opacity = isSel || isAdj ? 1 : 0.16;
+        const op = isSel || isAdj ? 1 : 0.16;
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = op;
       });
 
       /* animate camera toward selected node */
@@ -359,7 +406,8 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         (line.material as THREE.LineBasicMaterial).color.setHex(0x3d7acc);
       });
       s.ml.forEach((n) => {
-        (n.material as THREE.MeshStandardMaterial).opacity = 0.88;
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = 0.88;
       });
 
       /* keep current view on deselect */
@@ -376,10 +424,6 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     const showAll = filters.has("all");
     s.ml.forEach((m) => {
       m.visible = showAll || filters.has((m.userData as { l: string }).l);
-    });
-    Object.entries(s.labels).forEach(([nid, el]) => {
-      const n = ndRef.current.find((x) => x.id === nid);
-      el.style.display = showAll || (n && filters.has(n.l)) ? "" : "none";
     });
   }, []);
 
@@ -447,6 +491,41 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       scene.add(pp);
     });
 
+    /* helper: create a canvas texture with text for a block face */
+    function makeTextTexture(text: string, faceW: number, faceH: number, hexColor: number): THREE.CanvasTexture {
+      const baseRes = 256;
+      const aspect = Math.max(faceW, 0.1) / Math.max(faceH, 0.1);
+      const cW = Math.round(baseRes * Math.max(1, aspect));
+      const cH = Math.round(baseRes / Math.min(1, aspect));
+      const cvs = document.createElement("canvas");
+      cvs.width = cW;
+      cvs.height = cH;
+      const ctx = cvs.getContext("2d")!;
+      const r = (hexColor >> 16) & 0xff;
+      const g = (hexColor >> 8) & 0xff;
+      const b = hexColor & 0xff;
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(0, 0, cW, cH);
+      // subtle border
+      ctx.strokeStyle = `rgba(255,255,255,0.15)`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(2, 2, cW - 4, cH - 4);
+      // text
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      let fontSize = Math.floor(Math.min(cH * 0.32, cW * 0.18));
+      ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+      while (ctx.measureText(text).width > cW * 0.88 && fontSize > 10) {
+        fontSize--;
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+      }
+      ctx.fillText(text, cW / 2, cH / 2);
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
     /* nodes */
     const mm: Record<string, THREE.Mesh> = {};
     const ml: THREE.Mesh[] = [];
@@ -454,20 +533,82 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     ND.forEach((n) => {
       const ly = LAYERS[n.l];
       const h = n.loc ? Math.max(0.2, Math.min(3.5, Math.sqrt(n.loc) * 0.08)) : 0.3;
-      const geo = new THREE.BoxGeometry(1.05, h, 0.62);
-      const mat = new THREE.MeshStandardMaterial({
-        color: ly.c,
+
+      /* risk-based color: blend layer color toward red/yellow for high risk */
+      let nodeColor = ly.c;
+      let emissiveColor = 0x000000;
+      let emissiveIntensity = 0;
+      if (n.risk !== undefined) {
+        if (n.risk > 60) {
+          nodeColor = 0xdc2626; // red
+          emissiveColor = 0xff2222;
+          emissiveIntensity = 0.15;
+        } else if (n.risk > 30) {
+          nodeColor = 0xd97706; // amber
+          emissiveColor = 0xffaa00;
+          emissiveIntensity = 0.08;
+        } else {
+          nodeColor = 0x16a34a; // green
+        }
+      }
+      /* hotspot: extra glow */
+      if (n.hotspot) {
+        emissiveColor = 0xff4444;
+        emissiveIntensity = 0.35;
+      }
+
+      const w = n.hotspot ? 1.35 : 1.05;
+      const d = n.hotspot ? 0.82 : 0.62;
+
+      /* create text textures for each face orientation */
+      const texFB = makeTextTexture(n.lb, w, h, nodeColor); // front & back (w × h)
+      const texLR = makeTextTexture(n.lb, d, h, nodeColor); // left & right (d × h)
+      const texTB = makeTextTexture(n.lb, w, d, nodeColor); // top & bottom (w × d)
+
+      const matProps = {
+        emissive: emissiveColor,
+        emissiveIntensity,
         metalness: 0.15,
         roughness: 0.6,
         transparent: true,
         opacity: 0.88,
-      });
-      const m = new THREE.Mesh(geo, mat);
+      };
+      /* 6 materials: +X, -X, +Y, -Y, +Z, -Z */
+      const materials = [
+        new THREE.MeshStandardMaterial({ map: texLR, ...matProps }),
+        new THREE.MeshStandardMaterial({ map: texLR, ...matProps }),
+        new THREE.MeshStandardMaterial({ map: texTB, ...matProps }),
+        new THREE.MeshStandardMaterial({ map: texTB, ...matProps }),
+        new THREE.MeshStandardMaterial({ map: texFB, ...matProps }),
+        new THREE.MeshStandardMaterial({ map: texFB, ...matProps }),
+      ];
+
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const m = new THREE.Mesh(geo, materials);
       m.position.set(n.x, ly.y + h / 2, n.z);
-      m.userData = { id: n.id, lb: n.lb, l: n.l, lname: ly.name };
+      m.userData = { id: n.id, lb: n.lb, l: n.l, lname: ly.name, risk: n.risk, hotspot: n.hotspot, entryPoint: n.entryPoint, security: n.security, circular: n.circular, orphan: n.orphan };
       scene.add(m);
       mm[n.id] = m;
       ml.push(m);
+
+      /* entry point ring marker */
+      if (n.entryPoint) {
+        const ringGeo = new THREE.RingGeometry(0.7, 0.85, 16);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(n.x, ly.y + h + 0.08, n.z);
+        scene.add(ring);
+      }
+
+      /* security shield marker */
+      if (n.security) {
+        const shieldGeo = new THREE.SphereGeometry(0.15, 6, 6);
+        const shieldMat = new THREE.MeshBasicMaterial({ color: 0xc084fc });
+        const shield = new THREE.Mesh(shieldGeo, shieldMat);
+        shield.position.set(n.x + w / 2 + 0.2, ly.y + h, n.z);
+        scene.add(shield);
+      }
     });
 
     /* connections */
@@ -489,13 +630,15 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       cr.push({ curve, a, b });
       const pts = curve.getPoints(30);
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      /* circular deps get red line, others default blue */
+      const isCircular = CO.some(([ca, cb]) => ca === b && cb === a);
       const mat = new THREE.LineBasicMaterial({
-        color: 0x3d7acc,
+        color: isCircular ? 0xff4444 : 0x3d7acc,
         transparent: true,
-        opacity: 0.22,
+        opacity: isCircular ? 0.45 : 0.22,
       });
       const line = new THREE.Line(geo, mat);
-      line.userData = { a, b };
+      line.userData = { a, b, circular: isCircular };
       scene.add(line);
       ll.push(line);
     });
@@ -513,15 +656,18 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
     });
 
-    /* HTML labels */
-    const labels: Record<string, HTMLDivElement> = {};
-    ND.forEach((n) => {
+    /* layer name labels — placed at a far corner of each layer plane */
+    const layerLabels: { el: HTMLDivElement; pos: THREE.Vector3 }[] = [];
+    for (const [key, ly] of Object.entries(LAYERS)) {
       const el = document.createElement("div");
-      el.className = "arch-label";
-      el.textContent = n.lb;
+      el.className = "arch-layer-label";
+      el.textContent = ly.name.toUpperCase();
+      el.style.color = `#${ly.c.toString(16).padStart(6, "0")}`;
       overlay.appendChild(el);
-      labels[n.id] = el;
-    });
+      /* position at negative-x, negative-z corner of the grid */
+      const cornerOffset = gridExtent * 0.46;
+      layerLabels.push({ el, pos: new THREE.Vector3(-cornerOffset, ly.y, -cornerOffset) });
+    }
 
     /* state object */
     const initialRr = Math.max(26, gridExtent * 1.1);
@@ -534,7 +680,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       ll,
       cr,
       pts: pts2,
-      labels,
+      layerLabels,
       ph: 0.88,
       th: 0.55,
       rr: initialRr,
@@ -714,38 +860,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         p.m.position.copy(p.curve.getPoint(p.t));
       });
 
-      /* labels */
+      /* layer name labels — projected onto 2D overlay */
       const cw = canvas!.clientWidth || s.W;
-      ND.forEach((n) => {
-        const m = mm[n.id];
-        const lbl = labels[n.id];
-        if (!m.visible) {
-          lbl.style.display = "none";
-          return;
-        }
-        tv.copy(m.position).project(cam);
-        if (tv.z > 1) {
-          lbl.style.display = "none";
-          return;
-        }
-        lbl.style.display = "";
-        lbl.style.left = (tv.x * 0.5 + 0.5) * cw + "px";
-        lbl.style.top = (-tv.y * 0.5 + 0.5) * s.H + "px";
-
-        const isHov = m === s.hov || m === s.sel;
-        const isAdj = s.sel
-          ? coRef.current.some(
-              ([a, b]) =>
-                (a === (s.sel!.userData as { id: string }).id && b === n.id) ||
-                (b === (s.sel!.userData as { id: string }).id && a === n.id),
-            )
-          : false;
-        lbl.style.opacity = isHov ? "1" : s.sel ? (isAdj ? "0.7" : "0.1") : "0.48";
-        if (isHov) {
-          lbl.classList.add("arch-hi");
-        } else {
-          lbl.classList.remove("arch-hi");
-        }
+      s.layerLabels.forEach(({ el, pos }) => {
+        tv.copy(pos).project(cam);
+        if (tv.z > 1) { el.style.display = "none"; return; }
+        el.style.display = "";
+        el.style.left = (tv.x * 0.5 + 0.5) * cw + "px";
+        el.style.top = (-tv.y * 0.5 + 0.5) * s.H + "px";
       });
 
       renderer.render(scene, cam);
@@ -821,6 +943,15 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
   const isControlled = !!controlledFilters;
 
+  /* summary counts for the enriched legend */
+  const hotspotCount = ND.filter(n => n.hotspot).length;
+  const entryCount = ND.filter(n => n.entryPoint).length;
+  const securityCount = ND.filter(n => n.security).length;
+  const circularCount = ND.filter(n => n.circular).length;
+  const orphanCount = ND.filter(n => n.orphan).length;
+  const highRiskCount = ND.filter(n => (n.risk ?? 0) > 60).length;
+  const hasEnrichment = ND.some(n => n.risk !== undefined);
+
   return (
     <div className="w-full">
       {/* filter buttons — hidden when controlled externally */}
@@ -861,15 +992,86 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           Drag to orbit · Ctrl+drag to pan · Ctrl+scroll to zoom · Click a node
         </div>
 
-        {/* layer legend overlay */}
-        <div className="pointer-events-none absolute top-3 right-3 rounded-lg border border-white/10 bg-[#0a0e18]/85 px-3 py-2.5 backdrop-blur-sm">
-          <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-400">Layers</div>
-          {(["db", "be", "api", "fe"] as const).map(key => (
-            <div key={key} className="flex items-center gap-2 py-0.5">
-              <span className="inline-block h-2 w-2 rounded-sm" style={{ background: `#${LAYERS[key].c.toString(16).padStart(6, "0")}` }} />
-              <span className="text-[10px] capitalize text-slate-300">{LAYERS[key].name}</span>
+        {/* comprehensive collapsible legend */}
+        <div className="absolute top-3 right-3 z-10" style={{ maxHeight: 520, overflowY: "auto" }}>
+          <button
+            onClick={() => setLegendOpen(v => !v)}
+            className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#0a0e18]/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-300 backdrop-blur-sm transition hover:border-white/20 hover:text-white"
+          >
+            <svg className={`h-3 w-3 transition-transform ${legendOpen ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            Legend
+          </button>
+          {legendOpen && (
+            <div className="pointer-events-auto mt-1 rounded-lg border border-white/10 bg-[#0a0e18]/90 px-3 py-2.5 backdrop-blur-sm">
+              {/* Risk colors — only when enrichment present */}
+              {hasEnrichment && (
+                <div className="mb-2.5 border-t border-white/5 pt-2">
+                  <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Risk Level (color)</div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "#16a34a" }} />
+                    <span className="text-[10px] text-slate-300">Low risk (0–30)</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "#d97706" }} />
+                    <span className="text-[10px] text-slate-300">Medium risk (31–60)</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "#dc2626" }} />
+                    <span className="text-[10px] text-slate-300">High risk (61+)</span>
+                    {highRiskCount > 0 && <span className="text-[9px] text-red-400">{highRiskCount}</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Markers */}
+              {hasEnrichment && (
+                <div className="mb-2.5 border-t border-white/5 pt-2">
+                  <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Markers</div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-4 rounded-sm" style={{ background: "#ff4444", boxShadow: "0 0 6px #ff4444" }} />
+                    <span className="text-[10px] text-slate-300">Hotspot (top risk)</span>
+                    {hotspotCount > 0 && <span className="text-[9px] text-red-400">{hotspotCount}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-2 rounded-full border border-sky-400" style={{ background: "transparent" }} />
+                    <span className="text-[10px] text-slate-300">Entry point</span>
+                    {entryCount > 0 && <span className="text-[9px] text-sky-400">{entryCount}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#c084fc" }} />
+                    <span className="text-[10px] text-slate-300">Security-sensitive</span>
+                    {securityCount > 0 && <span className="text-[9px] text-purple-400">{securityCount}</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Connections */}
+              {hasEnrichment && (
+                <div className="border-t border-white/5 pt-2">
+                  <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Connections</div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-0.5 w-4" style={{ background: "#3d7acc" }} />
+                    <span className="text-[10px] text-slate-300">Dependency</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="inline-block h-0.5 w-4" style={{ background: "#ff4444" }} />
+                    <span className="text-[10px] text-slate-300">Circular dependency</span>
+                    {circularCount > 0 && <span className="text-[9px] text-red-400">{circularCount}</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Issues summary */}
+              {hasEnrichment && (orphanCount > 0 || circularCount > 0 || highRiskCount > 0) && (
+                <div className="mt-2.5 border-t border-white/5 pt-2">
+                  <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-orange-400/80">Issues Found</div>
+                  {highRiskCount > 0 && <div className="text-[10px] text-red-300 py-0.5">{highRiskCount} high-risk file{highRiskCount !== 1 ? "s" : ""}</div>}
+                  {circularCount > 0 && <div className="text-[10px] text-orange-300 py-0.5">{circularCount} file{circularCount !== 1 ? "s" : ""} with circular deps</div>}
+                  {orphanCount > 0 && <div className="text-[10px] text-slate-400 py-0.5">{orphanCount} orphan file{orphanCount !== 1 ? "s" : ""} (no connections)</div>}
+                </div>
+              )}
             </div>
-          ))}
+          )}
         </div>
       </div>
 
