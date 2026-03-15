@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { parseRepoUrl } from "@/lib/github";
 import { generateCity } from "@/lib/city-generator";
+import { getBackendUrl } from "@/lib/backend-url";
 import {
   summarizeBuildings,
   generateAIOnboarding,
 } from "@/lib/ai-summarizer";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 export const maxDuration = 300;
 
@@ -27,6 +26,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
 
 export async function POST(req: NextRequest) {
   try {
+    const backendUrl = getBackendUrl();
     const token = await getToken({
       req,
       secret: process.env.AUTH_SECRET,
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     let mapResult: PromiseSettledResult<Response>;
     try {
       const mapRes = await withTimeout(
-        fetch(`${BACKEND_URL}/api/map-repository`, {
+        fetch(`${backendUrl}/api/map-repository`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

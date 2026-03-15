@@ -384,28 +384,20 @@ export default function ArchitecturePage() {
         content: m.text,
       }));
 
-      const res = await fetch("http://localhost:3001/api/chat-guide", {
+      const res = await fetch("/api/question", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userQuery: userMsg.text,
-          projectSummary: fullContext,
+          question: userMsg.text,
+          city,
+          onboarding,
           messages: conversationHistory,
-          citySchema: city ? {
-            name: city.city.name,
-            language: city.city.language,
-            framework: city.city.framework,
-            architecture: city.city.architecture,
-            districts: city.city.districts.map(d => ({ name: d.name })),
-            entryPoints: city.city.entryPoints,
-            hotspots: city.city.hotspots,
-          } : null,
         }),
       });
       const raw = await res.json();
       setChatMessages(prev => [...prev, { role: "assistant", text: raw.answer || raw.error || "No response." }]);
     } catch {
-      setChatMessages(prev => [...prev, { role: "assistant", text: "Failed to reach AI backend. Is the server running on port 3001?" }]);
+      setChatMessages(prev => [...prev, { role: "assistant", text: "Failed to reach AI backend." }]);
     } finally {
       setChatLoading(false);
       chatInputRef.current?.focus();

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CitySchema, QuestionResponse, Building, OnboardingSummary } from "@/types/city";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
+import { getBackendUrl } from "@/lib/backend-url";
 
 function findBuildingsMatching(
   buildings: Building[],
@@ -16,6 +15,7 @@ function findBuildingsMatching(
 
 export async function POST(req: NextRequest) {
   try {
+    const backendUrl = getBackendUrl();
     const { question, city, onboarding, messages = [] } = (await req.json()) as {
       question: string;
       city: CitySchema;
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         codeMap,
       ].join("\n");
 
-      const res = await fetch(`${BACKEND_URL}/api/chat-guide`, {
+      const res = await fetch(`${backendUrl}/api/chat-guide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

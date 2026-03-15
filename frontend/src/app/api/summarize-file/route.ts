@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
+import { getBackendUrl } from "@/lib/backend-url";
 
 export async function POST(req: NextRequest) {
   try {
+    const backendUrl = getBackendUrl();
     const body = await req.json();
     const { building } = body;
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
 
-      const res = await fetch(`${BACKEND_URL}/api/summarize-file`, {
+      const res = await fetch(`${backendUrl}/api/summarize-file`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ building }),

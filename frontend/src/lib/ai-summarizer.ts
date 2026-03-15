@@ -1,6 +1,5 @@
 import { Building, CitySchema, OnboardingSummary } from "@/types/city";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
+import { getBackendUrl } from "@/lib/backend-url";
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -56,6 +55,7 @@ export async function summarizeBuildings(
   repoName: string,
   language: string
 ): Promise<Map<string, string>> {
+  const backendUrl = getBackendUrl();
   const summaries = new Map<string, string>();
 
   // Priority-sort: entry points, security-sensitive, high-risk, high-complexity first
@@ -72,7 +72,7 @@ export async function summarizeBuildings(
     const toSend = prioritized.slice(0, SUMMARY_MAX_FILES);
     for (let i = 0; i < toSend.length; i += SUMMARY_CHUNK_SIZE) {
       const chunk = toSend.slice(i, i + SUMMARY_CHUNK_SIZE);
-      const res = await fetch(`${BACKEND_URL}/api/summarize-batch`, {
+      const res = await fetch(`${backendUrl}/api/summarize-batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,6 +116,7 @@ export async function aiAnswerQuestion(
   cameraFlyTo: string | null;
   confidence: number;
 }> {
+  const backendUrl = getBackendUrl();
   const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
   try {
@@ -132,7 +133,7 @@ export async function aiAnswerQuestion(
       codeMap,
     ].join("\n");
 
-    const res = await fetch(`${BACKEND_URL}/api/chat-guide`, {
+    const res = await fetch(`${backendUrl}/api/chat-guide`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -201,6 +202,7 @@ export async function generateAIOnboarding(
   buildings: Building[]
 ): Promise<string> {
   try {
+    const backendUrl = getBackendUrl();
     const topRisk = [...buildings]
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, ONBOARDING_MAX_FILES)
@@ -224,7 +226,7 @@ export async function generateAIOnboarding(
       entryPointCount: city.city.entryPoints.length,
     };
 
-    const res = await fetch(`${BACKEND_URL}/api/generate-onboarding`, {
+    const res = await fetch(`${backendUrl}/api/generate-onboarding`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ city: compactCity, buildings: topRisk }),
