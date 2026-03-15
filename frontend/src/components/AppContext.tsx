@@ -206,7 +206,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (response.cameraFlyTo) {
       setCameraTarget(response.cameraFlyTo);
     }
-  }, []);
+    // Handle Navigator response types
+    if (response.responseType === "tour" && onboarding?.guidedTour?.length) {
+      setTourActive(true);
+      setTourStep(0);
+    }
+  }, [onboarding]);
 
   const handleBuildingFocus = useCallback((buildingId: string) => {
     setSelectedDistrictId(null);
@@ -285,7 +290,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000);
+      const timeout = setTimeout(() => controller.abort(), 300000);
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -296,7 +301,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             depth: "full",
             includeTests: false,
             githubToken: githubToken || undefined,
-            enableAI: false,
           },
         }),
       });
@@ -318,7 +322,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        setError("Analysis timed out after 120 seconds. Try a smaller repository.");
+        setError("Analysis timed out. Try a smaller repository or check your backend connection.");
       } else {
         setError(err instanceof Error ? err.message : "Something went wrong");
       }

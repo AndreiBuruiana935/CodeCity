@@ -5,7 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const zlib = require('zlib');
-const { mapRepository, inspectFile, askGuide, _clearCache } =
+const { mapRepository, inspectFile, askGuide, summarizeFile, summarizeBatch, generateOnboarding, _clearCache } =
   require('./services/aiAgents');
 
 const app = express();
@@ -103,9 +103,9 @@ app.post('/api/inspect-file', throttleMiddleware, async (req, res) => {
   }
 });
 
-// ── AGENT 3: GUIDE ─────────────────────────────────────────────
+// ── AGENT 3: NAVIGATOR (multilingual chat guide) ───────────────
 app.post('/api/chat-guide', throttleMiddleware, async (req, res) => {
-  const { userQuery, projectSummary = '' } = req.body;
+  const { userQuery, projectSummary = '', messages = [], citySchema = null } = req.body;
 
   if (!userQuery || typeof userQuery !== 'string' || !userQuery.trim()) {
     return res.status(400).json({
@@ -114,10 +114,74 @@ app.post('/api/chat-guide', throttleMiddleware, async (req, res) => {
   }
 
   try {
-    const result = await askGuide(userQuery, projectSummary);
-    return res.status(200).json({ success: true, answer: result.answer });
+    const result = await askGuide(userQuery, projectSummary, messages, citySchema);
+    return res.status(200).json({
+      success: true,
+      answer: result.answer,
+      highlightedBuildings: result.highlightedBuildings,
+      cameraFlyTo: result.cameraFlyTo,
+      relatedDistricts: result.relatedDistricts,
+      confidence: result.confidence,
+      detectedLanguage: result.detectedLanguage,
+      responseType: result.responseType,
+    });
   } catch (err) {
     console.error('[POST /api/chat-guide]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── AGENT 4: SUMMARIZER ────────────────────────────────────────
+app.post('/api/summarize-file', throttleMiddleware, async (req, res) => {
+  const { building } = req.body;
+
+  if (!building || !building.path) {
+    return res.status(400).json({
+      error: 'building with path is required in the request body.'
+    });
+  }
+
+  try {
+    const summary = await summarizeFile(building);
+    return res.status(200).json({ success: true, summary });
+  } catch (err) {
+    console.error('[POST /api/summarize-file]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/summarize-batch', throttleMiddleware, async (req, res) => {
+  const { buildings = [], repoName = '', language = '' } = req.body;
+
+  if (!Array.isArray(buildings)) {
+    return res.status(400).json({
+      error: 'buildings must be an array.'
+    });
+  }
+
+  try {
+    const summaries = await summarizeBatch(buildings, repoName, language);
+    return res.status(200).json({ success: true, summaries });
+  } catch (err) {
+    console.error('[POST /api/summarize-batch]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/generate-onboarding', throttleMiddleware, async (req, res) => {
+  const { city, buildings = [] } = req.body;
+
+  if (!city) {
+    return res.status(400).json({
+      error: 'city is required in the request body.'
+    });
+  }
+
+  try {
+    const onboardingText = await generateOnboarding(city, buildings);
+    return res.status(200).json({ success: true, onboardingText });
+  } catch (err) {
+    console.error('[POST /api/generate-onboarding]', err.message);
     return res.status(500).json({ error: err.message });
   }
 });

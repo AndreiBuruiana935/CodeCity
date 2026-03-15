@@ -307,6 +307,11 @@ export default function SidePanel({
 
         {/* Badges */}
         <div className="flex flex-wrap gap-2 pb-4">
+          {building.architecturalRole && (
+            <span className="rounded-full border border-cyan-400/40 bg-cyan-900/30 px-2 py-1 text-xs text-cyan-200">
+              {building.architecturalRole}
+            </span>
+          )}
           {building.entryPoint && (
             <span className="rounded-full border border-blue-400/40 bg-blue-900/30 px-2 py-1 text-xs text-blue-200">
               Entry Point
@@ -318,6 +323,22 @@ export default function SidePanel({
             </span>
           )}
         </div>
+
+        {/* Circular dependencies warning */}
+        {building.circularDeps && building.circularDeps.length > 0 && (
+          <section className="rounded-2xl border border-orange-400/25 bg-orange-950/20 p-4">
+            <h3 className="mb-2 text-xs font-semibold tracking-[0.14em] text-orange-300 uppercase">
+              Circular Dependencies
+            </h3>
+            <div className="space-y-1">
+              {building.circularDeps.map((dep, i) => (
+                <div key={i} className="text-sm text-orange-200/85 font-mono">
+                  ⟲ {dep}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

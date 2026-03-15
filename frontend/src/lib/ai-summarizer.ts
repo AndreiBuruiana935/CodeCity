@@ -1,77 +1,6 @@
 import { Building, CitySchema, OnboardingSummary } from "@/types/city";
 
-type ChatMessage = {
-  role: "system" | "user";
-  content: string;
-};
-
-type FeatherlessResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-};
-
-const FEATHERLESS_BASE_URL =
-  process.env.FEATHERLESS_BASE_URL || "https://api.featherless.ai/v1";
-const FEATHERLESS_API_KEY = process.env.FEATHERLESS_API_KEY;
-const FEATHERLESS_ANALYSIS_MODEL =
-  process.env.FEATHERLESS_ANALYSIS_MODEL || "gpt-4o-mini";
-const FEATHERLESS_CHAT_MODEL =
-  process.env.FEATHERLESS_CHAT_MODEL || "gpt-4o-mini";
-
-function isFeatherlessConfigured(): boolean {
-  return Boolean(FEATHERLESS_API_KEY);
-}
-
-async function featherlessChatCompletion(
-  messages: ChatMessage[],
-  model: string,
-  temperature = 0.2,
-  maxTokens = 1200
-): Promise<string> {
-  if (!isFeatherlessConfigured()) {
-    throw new Error("Featherless API key is missing");
-  }
-
-  const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${FEATHERLESS_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Featherless request failed (${res.status}): ${body}`);
-  }
-
-  const data = (await res.json()) as FeatherlessResponse;
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) {
-    throw new Error("Featherless returned an empty completion");
-  }
-
-  return content;
-}
-
-function extractJsonBlock(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-
-  const objectMatch = text.match(/\{[\s\S]*\}/);
-  if (objectMatch) return objectMatch[0];
-
-  return text;
-}
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 function fallbackSummaryFromPrompt(b: Building): string {
   const parts: string[] = [];
@@ -105,71 +34,44 @@ export async function summarizeBuildings(
 ): Promise<Map<string, string>> {
   const summaries = new Map<string, string>();
 
-  if (!isFeatherlessConfigured()) {
-    for (const b of buildings) {
-      summaries.set(b.path, fallbackSummaryFromPrompt(b));
-    }
-    return summaries;
-  }
-
-  const compactBuildings = buildings.slice(0, 150).map((b) => ({
-    id: b.id,
-    path: b.path,
-    entryPoint: b.entryPoint,
-    securitySensitive: b.securitySensitive,
-    riskScore: b.riskScore,
-    complexity: b.complexity,
-    dependencyCount: b.dependencyCount,
-    linesOfCode: b.linesOfCode,
-    functions: b.functions.slice(0, 8).map((f) => f.name),
-  }));
+  // Priority-sort: entry points, security-sensitive, high-risk, high-complexity first
+  const prioritized = [...buildings].sort((a, b) => {
+    const score = (x: Building) =>
+      (x.entryPoint ? 100 : 0) +
+      (x.securitySensitive ? 80 : 0) +
+      x.riskScore +
+      Math.min(x.complexity, 50);
+    return score(b) - score(a);
+  });
 
   try {
-    const content = await featherlessChatCompletion(
-      [
-        {
-          role: "system",
-          content:
-            "You are a senior software architect. Focus heavily on infrastructure, code topology, coupling, runtime flow, and maintainability risks. Return only valid JSON.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            task: "Create concise but detailed infrastructure-focused summaries for each file.",
-            format: {
-              summaries: [
-                {
-                  path: "string",
-                  summary:
-                    "2-4 sentences: architectural role, call/dependency context, and critical risk or ownership hints",
-                },
-              ],
-            },
-            repoName,
-            language,
-            buildings: compactBuildings,
-            constraints: [
-              "Max 450 characters per summary",
-              "Explain where this file sits in architecture, not just what it does",
-              "If security or entry flow applies, mention it explicitly",
-            ],
-          }),
-        },
-      ],
-      FEATHERLESS_ANALYSIS_MODEL,
-      0.2,
-      2400
-    );
+    const res = await fetch(`${BACKEND_URL}/api/summarize-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buildings: prioritized.slice(0, 500).map((b) => ({
+          path: b.path,
+          entryPoint: b.entryPoint,
+          securitySensitive: b.securitySensitive,
+          riskScore: b.riskScore,
+          complexity: b.complexity,
+          dependencyCount: b.dependencyCount,
+          linesOfCode: b.linesOfCode,
+          functions: b.functions.slice(0, 8).map((f) => f.name),
+        })),
+        repoName,
+        language,
+      }),
+    });
 
-    const parsed = JSON.parse(extractJsonBlock(content)) as {
-      summaries?: Array<{ path?: string; summary?: string }>;
-    };
-
-    for (const item of parsed.summaries || []) {
-      const path = item.path?.trim();
-      const summary = item.summary?.trim();
-      if (path && summary) {
-        summaries.set(path, summary);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.summaries) {
+        for (const [path, summary] of Object.entries(data.summaries)) {
+          if (typeof summary === "string") {
+            summaries.set(path, summary);
+          }
+        }
       }
     }
   } catch {
@@ -196,95 +98,61 @@ export async function aiAnswerQuestion(
   confidence: number;
 }> {
   const allBuildings = city.city.districts.flatMap((d) => d.buildings);
-  const topRisk = [...allBuildings]
-    .sort((a, b) => b.riskScore - a.riskScore)
-    .slice(0, 30)
-    .map((b) => ({
-      id: b.id,
-      path: b.path,
-      riskScore: b.riskScore,
-      complexity: b.complexity,
-      dependencyCount: b.dependencyCount,
-      summary: b.aiSummary,
-      warnings: b.aiWarnings,
-      entryPoint: b.entryPoint,
-    }));
 
-  if (isFeatherlessConfigured()) {
-    try {
-      const content = await featherlessChatCompletion(
-        [
-          {
-            role: "system",
-            content:
-              "You are a codebase navigator assistant. Answer based on provided project metadata. Prefer architecture and infrastructure explanations. Return only valid JSON.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              task: "Answer the user's question about this repository.",
-              outputFormat: {
-                answer:
-                  "string with concrete explanation and reasoning tied to architecture",
-                highlightedBuildings: ["array of building ids to highlight"],
-                cameraFlyTo: "building id or null",
-                confidence: "0..1 number",
-              },
-              question,
-              city: {
-                name: city.city.name,
-                language: city.city.language,
-                framework: city.city.framework,
-                architecture: city.city.architecture,
-                districtNames: city.city.districts.map((d) => d.name),
-                entryPoints: city.city.entryPoints,
-              },
-              onboarding,
-              candidateBuildings: topRisk,
-              constraints: [
-                "If unsure, say uncertainty explicitly",
-                "Never invent files not in candidateBuildings",
-                "Prioritize structural explanation over generic tips",
-              ],
-            }),
-          },
-        ],
-        FEATHERLESS_CHAT_MODEL,
-        0.25,
-        1800
-      );
+  try {
+    const codeMap = allBuildings
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 50)
+      .map((b) => `[${b.id}] ${b.path} risk:${b.riskScore} complexity:${b.complexity} deps:${b.dependencyCount}`)
+      .join("\n");
 
-      const parsed = JSON.parse(extractJsonBlock(content)) as {
-        answer?: string;
-        highlightedBuildings?: string[];
-        cameraFlyTo?: string | null;
-        confidence?: number;
-      };
+    const fullContext = [
+      onboarding?.plainEnglish || "",
+      "",
+      "=== FILE MAP ===",
+      codeMap,
+    ].join("\n");
 
-      if (parsed.answer && typeof parsed.answer === "string") {
+    const res = await fetch(`${BACKEND_URL}/api/chat-guide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userQuery: question,
+        projectSummary: fullContext,
+        citySchema: {
+          name: city.city.name,
+          language: city.city.language,
+          framework: city.city.framework,
+          architecture: city.city.architecture,
+          districts: city.city.districts.map((d) => ({ name: d.name })),
+          entryPoints: city.city.entryPoints,
+          hotspots: city.city.hotspots,
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.answer) {
         const validIds = new Set(allBuildings.map((b) => b.id));
-        const highlighted = (parsed.highlightedBuildings || []).filter((id) =>
+        const highlighted = (data.highlightedBuildings || []).filter((id: string) =>
           validIds.has(id)
         );
-        const flyTo = parsed.cameraFlyTo && validIds.has(parsed.cameraFlyTo)
-          ? parsed.cameraFlyTo
-          : highlighted[0] || null;
-
         return {
-          answer: parsed.answer,
+          answer: data.answer,
           highlightedBuildings: highlighted.slice(0, 10),
-          cameraFlyTo: flyTo,
-          confidence:
-            typeof parsed.confidence === "number"
-              ? Math.max(0, Math.min(1, parsed.confidence))
-              : 0.75,
+          cameraFlyTo: data.cameraFlyTo && validIds.has(data.cameraFlyTo)
+            ? data.cameraFlyTo
+            : highlighted[0] || null,
+          confidence: typeof data.confidence === "number" ? data.confidence : 0.7,
         };
       }
-    } catch {
-      // Fall through to local answer logic
     }
+  } catch {
+    // Fall through to keyword search
   }
 
+  // Fallback: keyword-based search
   const q = question.toLowerCase();
   const keywordMatches = allBuildings.filter((b) => {
     const text = `${b.path} ${b.filename} ${b.aiSummary} ${b.colorLabel}`.toLowerCase();
@@ -293,6 +161,7 @@ export async function aiAnswerQuestion(
       .filter((w) => w.length > 2)
       .some((w) => text.includes(w));
   });
+  const topRisk = [...allBuildings].sort((a, b) => b.riskScore - a.riskScore);
   const best = keywordMatches[0] || topRisk[0];
 
   return {
@@ -312,60 +181,26 @@ export async function generateAIOnboarding(
   city: CitySchema,
   buildings: Building[]
 ): Promise<string> {
-  const topRisk = [...buildings]
-    .sort((a, b) => b.riskScore - a.riskScore)
-    .slice(0, 6)
-    .map((b) => ({
-      path: b.path,
-      riskScore: b.riskScore,
-      entryPoint: b.entryPoint,
-      dependencyCount: b.dependencyCount,
-      complexity: b.complexity,
-    }));
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/generate-onboarding`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ city, buildings: buildings.slice(0, 20) }),
+    });
 
-  if (isFeatherlessConfigured()) {
-    try {
-      const content = await featherlessChatCompletion(
-        [
-          {
-            role: "system",
-            content:
-              "You are a principal engineer writing onboarding notes. Focus on infrastructure and architecture first, then pragmatic next steps.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              task: "Write one concise onboarding paragraph.",
-              constraints: [
-                "4-6 sentences",
-                "Mention architecture, key modules, and where to start reading",
-                "Mention at least one risk hotspot",
-              ],
-              city: {
-                name: city.city.name,
-                language: city.city.language,
-                framework: city.city.framework,
-                architecture: city.city.architecture,
-                districts: city.city.districts.map((d) => d.name),
-                entryPoints: city.city.entryPoints,
-              },
-              hotspots: topRisk,
-            }),
-          },
-        ],
-        FEATHERLESS_ANALYSIS_MODEL,
-        0.25,
-        700
-      );
-
-      if (content.trim()) {
-        return content.trim();
+    if (res.ok) {
+      const data = await res.json();
+      if (data.onboardingText) {
+        return data.onboardingText;
       }
-    } catch {
-      // Fall through to deterministic onboarding text
     }
+  } catch {
+    // Fall through to deterministic onboarding
   }
 
+  const topRisk = [...buildings]
+    .sort((a, b) => b.riskScore - a.riskScore)
+    .slice(0, 6);
   const hotspots = topRisk.map((b) => b.path).join(", ");
   return `This is a ${city.city.language} ${city.city.architecture} project using ${city.city.framework} with ${buildings.length} files across ${city.city.districts.length} modules. Start with entry points and top-risk files to understand execution flow quickly. Current hotspots: ${hotspots || "none"}.`;
 }

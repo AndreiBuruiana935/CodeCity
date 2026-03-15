@@ -144,12 +144,46 @@ const STATIC_CO: Conn[] = [
 /*  DYNAMIC REPO → ARCHITECTURE DATA                                   */
 /* ------------------------------------------------------------------ */
 
-export function classifyLayer(path: string): "db" | "be" | "api" | "fe" {
+const AI_LAYER_TO_SHORT: Record<string, "db" | "be" | "api" | "fe"> = {
+  database: "db",
+  backend: "be",
+  api: "api",
+  frontend: "fe",
+};
+
+/**
+ * Classify a file into an architecture layer.
+ * Priority: AI-assigned layer > AI role heuristic > regex fallback.
+ * The regex only runs when the Cartographer hasn't returned data.
+ */
+export function classifyLayer(
+  path: string,
+  role?: string,
+  aiLayer?: string,
+): "db" | "be" | "api" | "fe" {
+  // 1. AI Cartographer assigned an explicit layer — trust it directly
+  if (aiLayer && AI_LAYER_TO_SHORT[aiLayer]) {
+    return AI_LAYER_TO_SHORT[aiLayer];
+  }
+
+  // 2. AI role available but no layer — map role → layer as best guess
+  if (role) {
+    switch (role) {
+      case "model": case "migration": return "db";
+      case "route": case "controller": case "middleware": return "api";
+      case "service": case "utility": case "config": case "type": return "be";
+      case "component": case "hook": case "entry": return "fe";
+    }
+  }
+
+  // 3. No AI data at all — regex fallback (only used before Cartographer runs)
   const p = path.toLowerCase();
   if (/\/(api|routes|controllers|endpoints)\//.test(p) || /\/server\.(ts|js|mjs)$/.test(p))
     return "api";
+  if (/\.d\.ts$/.test(p) || /\/src\/types?\//.test(p))
+    return "be";
   if (
-    /\/(models?|schema|database|db|prisma|migrations?|types?|entities|seeds?)\//.test(p) ||
+    /\/(models?|schema|database|db|prisma|migrations?|entities|seeds?)\//.test(p) ||
     /\.(sql|prisma)$/.test(p)
   )
     return "db";
@@ -191,7 +225,7 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
     return {
       id: b.id,
       lb: b.filename,
-      l: classifyLayer(b.path),
+      l: classifyLayer(b.path, b.architecturalRole, b.aiLayer),
       x: 0,
       z: 0,
       loc: b.linesOfCode || 0,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CitySchema, QuestionResponse, Building, OnboardingSummary } from "@/types/city";
-import { aiAnswerQuestion } from "@/lib/ai-summarizer";
+
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 function findBuildingsMatching(
   buildings: Building[],
@@ -15,10 +16,11 @@ function findBuildingsMatching(
 
 export async function POST(req: NextRequest) {
   try {
-    const { question, city, onboarding } = (await req.json()) as {
+    const { question, city, onboarding, messages = [] } = (await req.json()) as {
       question: string;
       city: CitySchema;
       onboarding?: OnboardingSummary;
+      messages?: Array<{ role: string; content: string }>;
     };
 
     if (!question || !city) {
@@ -30,37 +32,65 @@ export async function POST(req: NextRequest) {
 
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
-    const aiEnabled =
-      process.env.ENABLE_AI === "true" && !!process.env.FEATHERLESS_API_KEY;
+    // Try AI-powered Navigator via backend
+    try {
+      const codeMap = allBuildings
+        .sort((a, b) => b.riskScore - a.riskScore)
+        .slice(0, 50)
+        .map((b) => `[${b.id}] ${b.path} risk:${b.riskScore} complexity:${b.complexity} deps:${b.dependencyCount}${b.aiSummary ? ` — ${b.aiSummary}` : ""}`)
+        .join("\n");
 
-    // Try AI-powered answer first only when explicitly enabled
-    if (aiEnabled) {
-      try {
-        const fallbackOnboarding: OnboardingSummary = onboarding || {
-          plainEnglish: `${city.city.language} ${city.city.architecture} using ${city.city.framework}`,
-          guidedTour: [],
-          readingList: [],
-          riskReport: [],
-        };
+      const fullContext = [
+        onboarding?.plainEnglish || `${city.city.language} ${city.city.architecture} using ${city.city.framework}`,
+        "",
+        "=== FILE MAP ===",
+        codeMap,
+      ].join("\n");
 
-        const aiResult = await aiAnswerQuestion(
-          question,
-          city,
-          fallbackOnboarding
-        );
+      const res = await fetch(`${BACKEND_URL}/api/chat-guide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userQuery: question,
+          projectSummary: fullContext,
+          messages,
+          citySchema: {
+            name: city.city.name,
+            language: city.city.language,
+            framework: city.city.framework,
+            architecture: city.city.architecture,
+            districts: city.city.districts.map((d) => ({ name: d.name })),
+            entryPoints: city.city.entryPoints,
+            hotspots: city.city.hotspots,
+          },
+        }),
+      });
 
-        const response: QuestionResponse = {
-          answer: aiResult.answer,
-          highlightedBuildings: aiResult.highlightedBuildings,
-          cameraFlyTo: aiResult.cameraFlyTo,
-          relatedDistricts: [],
-          confidence: aiResult.confidence,
-        };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.answer) {
+          const validIds = new Set(allBuildings.map((b) => b.id));
+          const highlighted = (data.highlightedBuildings || []).filter((id: string) =>
+            validIds.has(id)
+          );
 
-        return NextResponse.json(response);
-      } catch (err) {
-        console.error("AI question failed, falling back to keyword search:", err);
+          const response: QuestionResponse = {
+            answer: data.answer,
+            highlightedBuildings: highlighted.slice(0, 10),
+            cameraFlyTo: data.cameraFlyTo && validIds.has(data.cameraFlyTo)
+              ? data.cameraFlyTo
+              : highlighted[0] || null,
+            relatedDistricts: data.relatedDistricts || [],
+            confidence: typeof data.confidence === "number" ? data.confidence : 0.7,
+            detectedLanguage: data.detectedLanguage || "en",
+            responseType: data.responseType || "explanation",
+          };
+
+          return NextResponse.json(response);
+        }
       }
+    } catch (err) {
+      console.error("Navigator backend call failed, falling back to keyword search:", err);
     }
 
     // Fallback: keyword-based search

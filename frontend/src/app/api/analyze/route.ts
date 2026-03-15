@@ -7,7 +7,9 @@ import {
   generateAIOnboarding,
 } from "@/lib/ai-summarizer";
 
-export const maxDuration = 120;
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
+
+export const maxDuration = 300;
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -48,40 +50,97 @@ export async function POST(req: NextRequest) {
       githubToken: effectiveToken,
     });
 
-    // AI-powered summaries
+    // AI-powered enrichment — phased to respect Featherless concurrency (4 units max)
+    // Phase 1: Summaries (7B×2=2u) + Onboarding (7B=1u) = 3 units max
+    // Phase 2: Cartographer (32B=2u) alone = 2 units
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
-    const aiEnabled =
-      process.env.ENABLE_AI === "true" &&
-      !!process.env.FEATHERLESS_API_KEY &&
-      options.enableAI === true;
 
-    if (aiEnabled) {
+    // ── Phase 1: Summaries + Onboarding in parallel ──
+    const [summariesResult, onboardingResult] = await Promise.allSettled([
+      withTimeout(
+        summarizeBuildings(allBuildings, `${owner}/${repo}`, city.city.language),
+        120000
+      ),
+      withTimeout(
+        generateAIOnboarding(city, allBuildings),
+        60000
+      ),
+    ]);
+
+    // ── Phase 2: Cartographer (once Phase 1 slots freed) ──
+    const mapResult = await withTimeout(
+      fetch(`${BACKEND_URL}/api/map-repository`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoTree: allBuildings.map((b) => b.path).join("\n"),
+          repoName: `${owner}/${repo}`,
+        }),
+      }),
+      90000
+    ).then(
+      (v) => ({ status: "fulfilled" as const, value: v }),
+      (e) => ({ status: "rejected" as const, reason: e })
+    );
+
+    // Merge summaries
+    if (summariesResult.status === "fulfilled") {
+      const summaries = summariesResult.value;
+      for (const district of city.city.districts) {
+        for (const building of district.buildings) {
+          const summary = summaries.get(building.path);
+          if (summary) building.aiSummary = summary;
+        }
+      }
+    } else {
+      console.error("AI summaries failed:", summariesResult.reason);
+    }
+
+    // Merge onboarding
+    if (onboardingResult.status === "fulfilled" && onboardingResult.value) {
+      onboarding.plainEnglish = onboardingResult.value;
+    } else if (onboardingResult.status === "rejected") {
+      console.error("AI onboarding failed:", onboardingResult.reason);
+    }
+
+    // Merge Cartographer data
+    if (mapResult.status === "fulfilled") {
       try {
-        // Generate AI summaries for buildings
-        const summaries = await withTimeout(
-          summarizeBuildings(
-            allBuildings,
-            `${owner}/${repo}`,
-            city.city.language
-          ),
-          12000
-        );
-        for (const district of city.city.districts) {
-          for (const building of district.buildings) {
-            const summary = summaries.get(building.path);
-            if (summary) building.aiSummary = summary;
+        const mapRes = mapResult.value;
+        if (mapRes.ok) {
+          const mapData = await mapRes.json();
+          if (mapData.districtMap) {
+            if (mapData.districtMap.fileRoles) {
+              city.city.fileRoles = mapData.districtMap.fileRoles;
+              const roleMap = new Map<string, { role: string; layer: string }>(
+                mapData.districtMap.fileRoles.map((r: { file: string; role: string; layer: string }) => [r.file, { role: r.role, layer: r.layer }])
+              );
+              for (const district of city.city.districts) {
+                for (const building of district.buildings) {
+                  const info = roleMap.get(building.path);
+                  if (info) {
+                    building.architecturalRole = info.role as import("@/types/city").ArchitecturalRole;
+                    const validLayers = ["database", "backend", "api", "frontend"] as const;
+                    if (validLayers.includes(info.layer as typeof validLayers[number])) {
+                      building.aiLayer = info.layer as typeof validLayers[number];
+                    }
+                  }
+                }
+              }
+            }
+            if (mapData.districtMap.circularDependencies) {
+              city.city.circularDependencies = mapData.districtMap.circularDependencies;
+            }
+            if (mapData.districtMap.testCoverage) {
+              city.city.testCoverage = mapData.districtMap.testCoverage;
+            }
           }
         }
-
-        // Generate AI onboarding summary
-        const aiSummary = await withTimeout(
-          generateAIOnboarding(city, allBuildings),
-          7000
-        );
-        if (aiSummary) onboarding.plainEnglish = aiSummary;
-      } catch (err) {
-        console.error("AI enrichment failed, using static analysis:", err);
+      } catch (parseErr) {
+        console.error("Cartographer response parse failed:", parseErr);
       }
+    } else {
+      console.error("Cartographer role analysis failed:", mapResult.reason);
     }
 
     // Send webhook if configured

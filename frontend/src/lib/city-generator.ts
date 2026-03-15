@@ -130,6 +130,14 @@ function prioritizeFiles(files: GitHubFile[]): GitHubFile[] {
       f.path.includes("api/")
     )
       score += 60;
+    // Pages and components import many things → important for road generation
+    if (f.path.includes("/page.") || f.path.includes("/pages/"))
+      score += 70;
+    if (f.path.includes("/components/") || f.path.includes("/hooks/"))
+      score += 55;
+    // Layout and context files are architectural hubs
+    if (f.path.includes("layout") || f.path.includes("Context") || f.path.includes("Provider"))
+      score += 65;
     return { file: f, score };
   });
 
@@ -221,7 +229,7 @@ export async function generateCity(
   // Reserve some budget for safety
   const availableRequests = Math.max(0, rateLimit.remaining - 5);
   const maxContentFetches = Math.min(
-    depth === "shallow" ? 30 : 80,
+    depth === "shallow" ? 30 : 150,
     availableRequests
   );
 
@@ -370,6 +378,35 @@ function findBuildingByImport(
   fromPath: string,
   buildingsByPath: Map<string, Building>
 ): Building | null {
+  // Skip bare node_modules / external packages
+  if (
+    !importPath.startsWith(".") &&
+    !importPath.startsWith("@/") &&
+    !importPath.startsWith("~/") &&
+    !importPath.startsWith("/")
+  ) {
+    return null;
+  }
+
+  const extensions = [
+    "", ".ts", ".tsx", ".js", ".jsx", ".mjs",
+    "/index.ts", "/index.tsx", "/index.js",
+  ];
+
+  // Handle @/ and ~/ aliases → resolve to src/
+  if (importPath.startsWith("@/") || importPath.startsWith("~/")) {
+    const stripped = importPath.slice(2); // remove @/ or ~/
+    // Try common src roots
+    const srcPrefixes = ["src/", "frontend/src/", "app/", ""];
+    for (const prefix of srcPrefixes) {
+      for (const ext of extensions) {
+        const bld = buildingsByPath.get(prefix + stripped + ext);
+        if (bld) return bld;
+      }
+    }
+  }
+
+  // Relative imports
   if (importPath.startsWith("./") || importPath.startsWith("../")) {
     const fromDir = fromPath.split("/").slice(0, -1).join("/");
     const parts = importPath.split("/");
@@ -385,18 +422,17 @@ function findBuildingByImport(
     }
 
     const base = resolved.join("/");
-    const extensions = [
-      "", ".ts", ".tsx", ".js", ".jsx",
-      "/index.ts", "/index.tsx", "/index.js",
-    ];
     for (const ext of extensions) {
       const bld = buildingsByPath.get(base + ext);
       if (bld) return bld;
     }
   }
 
+  // Loose fallback — only match against the last segment to avoid false positives
+  const segments = importPath.split("/");
+  const tail = segments.slice(-2).join("/"); // e.g. "lib/github"
   for (const [path, bld] of buildingsByPath) {
-    if (path.endsWith(importPath) || path.includes(importPath)) {
+    if (path.endsWith("/" + tail) || path.endsWith("/" + tail + ".ts") || path.endsWith("/" + tail + ".tsx")) {
       return bld;
     }
   }

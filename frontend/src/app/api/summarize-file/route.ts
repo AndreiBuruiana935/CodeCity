@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const FEATHERLESS_BASE_URL =
-  process.env.FEATHERLESS_BASE_URL || "https://api.featherless.ai/v1";
-const FEATHERLESS_API_KEY = process.env.FEATHERLESS_API_KEY;
-const FEATHERLESS_ANALYSIS_MODEL =
-  process.env.FEATHERLESS_ANALYSIS_MODEL || "gpt-4o-mini";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,76 +14,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If Featherless isn't configured, return a local fallback summary
-    if (!FEATHERLESS_API_KEY) {
-      return NextResponse.json({
-        summary: buildFallbackSummary(building),
-      });
-    }
-
-    const compact = {
-      path: building.path,
-      entryPoint: building.entryPoint,
-      securitySensitive: building.securitySensitive,
-      riskScore: building.riskScore,
-      complexity: building.complexity,
-      dependencyCount: building.dependencyCount,
-      linesOfCode: building.linesOfCode,
-      functions: (building.functions || []).slice(0, 10).map((f: { name: string }) => f.name),
-      dependencies: (building.dependencies || []).slice(0, 10),
-    };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
+    // Proxy to backend summarizer
     try {
-      const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      const res = await fetch(`${BACKEND_URL}/api/summarize-file`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${FEATHERLESS_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: FEATHERLESS_ANALYSIS_MODEL,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a senior software architect. Given file metadata, write a concise 2-3 sentence summary focusing on the file's architectural role, key responsibilities, and any risk or coupling concerns. Return ONLY the summary text, no JSON or formatting.",
-            },
-            {
-              role: "user",
-              content: JSON.stringify(compact),
-            },
-          ],
-          temperature: 0.2,
-          max_tokens: 300,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ building }),
         signal: controller.signal,
       });
 
       clearTimeout(timeout);
 
-      if (!res.ok) {
-        console.error(`Featherless summarize failed (${res.status})`);
-        return NextResponse.json({
-          summary: buildFallbackSummary(building),
-        });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.summary) {
+          return NextResponse.json({ summary: data.summary });
+        }
       }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim();
-
-      return NextResponse.json({
-        summary: content || buildFallbackSummary(building),
-      });
-    } catch (err) {
-      clearTimeout(timeout);
-      console.error("Featherless summarize error:", err);
-      return NextResponse.json({
-        summary: buildFallbackSummary(building),
-      });
+    } catch {
+      // Fall through to local fallback
     }
+
+    return NextResponse.json({
+      summary: buildFallbackSummary(building),
+    });
   } catch {
     return NextResponse.json(
       { error: "Invalid request body" },

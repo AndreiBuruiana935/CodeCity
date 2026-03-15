@@ -1,3 +1,18 @@
+export type ArchitecturalRole =
+  | "controller"
+  | "model"
+  | "service"
+  | "component"
+  | "middleware"
+  | "config"
+  | "test"
+  | "utility"
+  | "route"
+  | "migration"
+  | "hook"
+  | "type"
+  | "entry";
+
 export interface FunctionInfo {
   name: string;
   lines: string;
@@ -24,6 +39,10 @@ export interface Building {
   aiWarnings: string[];
   readingListPriority: number;
   status?: "available" | "unavailable" | "binary";
+  architecturalRole?: ArchitecturalRole;
+  aiLayer?: "database" | "backend" | "api" | "frontend";
+  circularDeps?: string[];
+  testFile?: string;
 }
 
 export interface District {
@@ -63,6 +82,9 @@ export interface CitySchema {
     roads: Road[];
     entryPoints: string[];
     hotspots: string[];
+    fileRoles?: { file: string; role: ArchitecturalRole; layer: "database" | "backend" | "api" | "frontend"; confidence: number }[];
+    circularDependencies?: { fileA: string; fileB: string }[];
+    testCoverage?: { covered: string[]; uncovered: string[] };
   };
 }
 
@@ -103,6 +125,8 @@ export interface QuestionResponse {
   cameraFlyTo: string | null;
   relatedDistricts: string[];
   confidence: number;
+  detectedLanguage?: string;
+  responseType?: "explanation" | "highlight" | "tour" | "readingList";
 }
 
 export interface AnalyzeRequest {

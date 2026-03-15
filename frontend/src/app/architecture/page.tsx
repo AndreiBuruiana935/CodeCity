@@ -177,7 +177,7 @@ export default function ArchitecturePage() {
     const buildingLayer: Record<string, string> = {};
     const layerFiles: Record<string, typeof allBuildings> = { db: [], be: [], api: [], fe: [] };
     for (const b of allBuildings) {
-      const layer = classifyLayer(b.path);
+      const layer = classifyLayer(b.path, b.architecturalRole, b.aiLayer);
       buildingLayer[b.id] = layer;
       layerFiles[layer].push(b);
     }
@@ -278,17 +278,60 @@ export default function ArchitecturePage() {
     } catch { return null; }
   }, [repoUrl, selectedBuilding]);
 
-  // Find road connections for a dependency
-  const getDepConnections = useCallback((depPath: string) => {
-    if (!city || !selectedBuilding) return [];
+  // Resolve a raw import string to a building (mirrors city-generator's findBuildingByImport)
+  const resolveDepBuilding = useCallback((dep: string, fromPath: string) => {
+    if (!city) return null;
     const allBuildings = city.city.districts.flatMap(d => d.buildings);
-    const depBuilding = allBuildings.find(b => b.path === depPath || b.filename === depPath || b.path.endsWith(`/${depPath}`));
+    const byPath = new Map(allBuildings.map(b => [b.path, b]));
+    const extensions = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", "/index.ts", "/index.tsx", "/index.js"];
+
+    // @/ or ~/ alias
+    if (dep.startsWith("@/") || dep.startsWith("~/")) {
+      const stripped = dep.slice(2);
+      for (const prefix of ["src/", "frontend/src/", "app/", ""]) {
+        for (const ext of extensions) {
+          const b = byPath.get(prefix + stripped + ext);
+          if (b) return b;
+        }
+      }
+    }
+
+    // Relative import
+    if (dep.startsWith("./") || dep.startsWith("../")) {
+      const fromDir = fromPath.split("/").slice(0, -1).join("/");
+      const parts = dep.split("/");
+      const resolved = fromDir ? fromDir.split("/") : [];
+      for (const part of parts) {
+        if (part === ".") continue;
+        if (part === "..") resolved.pop();
+        else resolved.push(part);
+      }
+      const base = resolved.join("/");
+      for (const ext of extensions) {
+        const b = byPath.get(base + ext);
+        if (b) return b;
+      }
+    }
+
+    // Plain name fallback (exact path / filename / suffix match)
+    return allBuildings.find(b => b.path === dep || b.filename === dep || b.path.endsWith(`/${dep}`)) ?? null;
+  }, [city]);
+
+  // Find road connections for a dependency
+  const getDepConnections = useCallback((dep: string) => {
+    if (!city || !selectedBuilding) return [];
+    const depBuilding = resolveDepBuilding(dep, selectedBuilding.path);
     if (!depBuilding) return [];
     return city.city.roads.filter(
       r => (r.from === selectedBuilding.id && r.to === depBuilding.id) ||
            (r.to === selectedBuilding.id && r.from === depBuilding.id)
     ).map(r => ({ ...r, depBuilding }));
-  }, [city, selectedBuilding]);
+  }, [city, selectedBuilding, resolveDepBuilding]);
+
+  // Check if a dependency is an external package (not a local file)
+  const isExternalDep = useCallback((dep: string) => {
+    return !dep.startsWith(".") && !dep.startsWith("@/") && !dep.startsWith("~/") && !dep.startsWith("/");
+  }, []);
 
   // Chat submit handler
   const handleChatSubmit = useCallback(async (e: React.FormEvent) => {
@@ -685,7 +728,8 @@ export default function ArchitecturePage() {
                           <div className="space-y-1">
                             {b.dependencies.map((dep, i) => {
                               const isExpanded = expandedDep === dep;
-                              const connections = isExpanded ? getDepConnections(dep) : [];
+                              const isExternal = isExternalDep(dep);
+                              const connections = isExpanded && !isExternal ? getDepConnections(dep) : [];
                               return (
                                 <div key={i}>
                                   <button
@@ -699,16 +743,19 @@ export default function ArchitecturePage() {
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                                     </svg>
                                     <span className="truncate">{dep}</span>
+                                    {isExternal && <span className="ml-auto shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">npm</span>}
                                   </button>
                                   {isExpanded && (
                                     <div className="ml-5 mt-1 rounded-md border border-slate-700/40 bg-slate-900/40 p-2 text-[10px]">
-                                      {connections.length > 0 ? connections.map((conn, ci) => (
+                                      {isExternal ? (
+                                        <span className="text-slate-500">External package — not part of the project graph.</span>
+                                      ) : connections.length > 0 ? connections.map((conn, ci) => (
                                         <div key={ci} className="flex items-center gap-2 py-0.5">
                                           <span className="text-slate-500">type:</span><span className="text-slate-300">{conn.type}</span>
                                           <span className="text-slate-500">weight:</span><span className="text-slate-300">{conn.weight}</span>
                                           <span className="text-slate-500">→</span><span className="truncate text-cyan-300">{conn.depBuilding.path}</span>
                                         </div>
-                                      )) : <span className="text-slate-600">No direct road connections found.</span>}
+                                      )) : <span className="text-slate-600">Local import — road not resolved.</span>}
                                     </div>
                                   )}
                                 </div>

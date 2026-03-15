@@ -60,40 +60,29 @@ export default function QuestionBar({
     setLoading(true);
 
     try {
-      // Build a compact code map from the city data so the Guide has repo context
-      const codeMap = city.city.districts
-        .flatMap((d) =>
-          d.buildings.map((b) => {
-            const fns = b.functions.map((f) => `${f.name}(${f.params.join(",")})`).join("; ");
-            return `[${b.path}] LOC:${b.linesOfCode} risk:${b.riskScore} complexity:${b.complexity} deps:${b.dependencyCount}${fns ? ` fns:{${fns}}` : ""}${b.aiSummary ? ` — ${b.aiSummary}` : ""}`;
-          })
-        )
-        .join("\n");
+      // Build conversation history for multi-turn context
+      const history = [...messages, userMessage]
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.text }));
 
-      const fullContext = [
-        onboarding?.plainEnglish || "",
-        "",
-        "=== FILE MAP ===",
-        codeMap,
-      ].join("\n");
-
-      const res = await fetch("http://localhost:3001/api/chat-guide", {
+      const res = await fetch("/api/question", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userQuery: userMessage.text,
-          projectSummary: fullContext,
+          question: userMessage.text,
+          city,
+          onboarding,
+          messages: history,
         }),
       });
 
-      const raw = await res.json();
-      const data: QuestionResponse = {
-        answer: raw.answer || raw.error || "No response from guide.",
-        highlightedBuildings: [],
-        cameraFlyTo: null,
-        relatedDistricts: [],
-        confidence: raw.success ? 0.8 : 0.2,
-      };
+      const data: QuestionResponse = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error as string);
+      }
+
       setMessages((prev) => [
         ...prev,
         {
