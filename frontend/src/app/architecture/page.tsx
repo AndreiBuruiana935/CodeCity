@@ -140,9 +140,14 @@ export default function ArchitecturePage() {
   const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
   const [stayOnPage, setStayOnPage] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  // Reset showSummary when repo or city changes
+  useEffect(() => {
+    setShowSummary(false);
+  }, [repoUrl, city]);
+
   // Show summary popup on entry if onboarding exists
   useEffect(() => {
-    if (onboarding && !showSummary) {
+    if (onboarding) {
       setShowSummary(true);
     }
     // Only show once per entry
