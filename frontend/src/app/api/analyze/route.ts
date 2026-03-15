@@ -50,13 +50,12 @@ export async function POST(req: NextRequest) {
       githubToken: effectiveToken,
     });
 
-    // AI-powered enrichment — phased to respect Featherless concurrency (4 units max)
-    // Phase 1: Summaries (7B×2=2u) + Onboarding (7B=1u) = 3 units max
-    // Phase 2: Cartographer (32B=2u) alone = 2 units
+    // AI-powered enrichment — all three run in parallel
+    // Summaries use 7B (1 unit ×2 concurrent = 2u), Onboarding 7B (1u), Cartographer 32B (2u)
+    // Peak = 5 units vs 4 limit, handled by backend 429 retry-with-backoff
     const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
-    // ── Phase 1: Summaries + Onboarding in parallel ──
-    const [summariesResult, onboardingResult] = await Promise.allSettled([
+    const [summariesResult, onboardingResult, mapResult] = await Promise.allSettled([
       withTimeout(
         summarizeBuildings(allBuildings, `${owner}/${repo}`, city.city.language),
         120000
@@ -65,23 +64,18 @@ export async function POST(req: NextRequest) {
         generateAIOnboarding(city, allBuildings),
         60000
       ),
-    ]);
-
-    // ── Phase 2: Cartographer (once Phase 1 slots freed) ──
-    const mapResult = await withTimeout(
-      fetch(`${BACKEND_URL}/api/map-repository`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repoTree: allBuildings.map((b) => b.path).join("\n"),
-          repoName: `${owner}/${repo}`,
+      withTimeout(
+        fetch(`${BACKEND_URL}/api/map-repository`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repoTree: allBuildings.map((b) => b.path).join("\n"),
+            repoName: `${owner}/${repo}`,
+          }),
         }),
-      }),
-      90000
-    ).then(
-      (v) => ({ status: "fulfilled" as const, value: v }),
-      (e) => ({ status: "rejected" as const, reason: e })
-    );
+        90000
+      ),
+    ]);
 
     // Merge summaries
     if (summariesResult.status === "fulfilled") {

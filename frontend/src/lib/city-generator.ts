@@ -257,7 +257,7 @@ export async function generateCity(
   const buildingsByPath = new Map<string, Building>();
 
   // Process files: fetch content only for prioritized ones
-  const BATCH_SIZE = 5; // Smaller batches to be gentler on rate limits
+  const BATCH_SIZE = 15; // Parallel fetches per batch (safe with 5000 req/hr auth limit)
   const filesToProcess = files.slice(0, depth === "shallow" ? 200 : 1000);
 
   // Split into content-fetch group and metadata-only group

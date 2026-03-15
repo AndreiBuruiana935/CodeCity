@@ -288,6 +288,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsAnalyzing(true);
     setLoadingProgress("Fetching repository structure...");
 
+    // Simulate progress phases to keep users informed
+    const phases = [
+      { msg: "Fetching repository structure...", delay: 0 },
+      { msg: "Downloading file contents...", delay: 4000 },
+      { msg: "Analyzing code structure & dependencies...", delay: 12000 },
+      { msg: "Running AI summaries...", delay: 20000 },
+      { msg: "Mapping architecture layers...", delay: 35000 },
+      { msg: "Building city layout...", delay: 55000 },
+      { msg: "Almost there — finalizing...", delay: 80000 },
+    ];
+    const phaseTimers = phases.slice(1).map(({ msg, delay }) =>
+      setTimeout(() => setLoadingProgress(msg), delay)
+    );
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000);
@@ -313,6 +327,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       setLoadingProgress("Generating city layout...");
       const data = await res.json();
+      phaseTimers.forEach(clearTimeout);
       setCity(data.city);
       setOnboarding(data.onboarding);
       rememberCity(effectiveRepoUrl);
@@ -321,6 +336,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setLoadingProgress("");
       return true;
     } catch (err) {
+      phaseTimers.forEach(clearTimeout);
       if (err instanceof Error && err.name === "AbortError") {
         setError("Analysis timed out. Try a smaller repository or check your backend connection.");
       } else {

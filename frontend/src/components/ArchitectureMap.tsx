@@ -677,14 +677,16 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       ll.push(line);
     });
 
-    /* animated particles */
+    /* animated particles — share geometry + material per layer */
     const pts2: { m: THREE.Mesh; curve: THREE.QuadraticBezierCurve3; t: number; s: number }[] = [];
+    const particleGeo = new THREE.SphereGeometry(0.07, 5, 5);
+    const particleMatCache: Record<number, THREE.MeshBasicMaterial> = {};
     cr.forEach(({ curve, b: bId }) => {
       const tly = LAYERS[ND.find((n) => n.id === bId)?.l || "api"];
+      const col = tly?.c || 0x4af0d0;
+      if (!particleMatCache[col]) particleMatCache[col] = new THREE.MeshBasicMaterial({ color: col });
       for (let i = 0; i < 2; i++) {
-        const geo = new THREE.SphereGeometry(0.07, 5, 5);
-        const mat = new THREE.MeshBasicMaterial({ color: tly?.c || 0x4af0d0 });
-        const m = new THREE.Mesh(geo, mat);
+        const m = new THREE.Mesh(particleGeo, particleMatCache[col]);
         scene.add(m);
         pts2.push({ m, curve, t: Math.random(), s: 0.11 + Math.random() * 0.1 });
       }
@@ -922,6 +924,24 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("resize", onResize);
+      // Dispose all THREE.js resources to prevent GPU memory leaks
+      s.ml.forEach((m: THREE.Mesh) => {
+        m.geometry.dispose();
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        mats.forEach((mat: THREE.Material & { map?: THREE.Texture }) => {
+          mat.map?.dispose();
+          mat.dispose();
+        });
+      });
+      s.ll.forEach((l: THREE.Line) => {
+        l.geometry.dispose();
+        (l.material as THREE.Material).dispose();
+      });
+      s.pts.forEach((p: { m: THREE.Mesh }) => {
+        // shared geo/mat — only dispose once below
+      });
+      particleGeo.dispose();
+      Object.values(particleMatCache).forEach(m => m.dispose());
       renderer.dispose();
       overlay.innerHTML = "";
     };

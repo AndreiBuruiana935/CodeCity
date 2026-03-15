@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/components/AppContext";
@@ -27,7 +27,7 @@ interface DirTreeNode {
   fileId?: string;
 }
 
-function DirTreeView({
+const DirTreeView = memo(function DirTreeView({
   nodes,
   onSelectFile,
   depth = 0,
@@ -88,10 +88,10 @@ function DirTreeView({
       })}
     </ul>
   );
-}
+});
 
-/* ── Collapsible accordion section ─────────────────────────── */
-function AccordionSection({ id, label, open, onToggle, accent, children }: {
+/* ── Collapsible accordion section ─────────────────────────────────── */
+const AccordionSection = memo(function AccordionSection({ id, label, open, onToggle, accent, children }: {
   id: string; label: string; open: boolean; onToggle: (id: string) => void;
   accent?: "orange"; children: React.ReactNode;
 }) {
@@ -110,7 +110,7 @@ function AccordionSection({ id, label, open, onToggle, accent, children }: {
       {open && <div className="px-4 pb-3">{children}</div>}
     </div>
   );
-}
+});
 
 export default function ArchitecturePage() {
   const { data: session, status } = useSession();
