@@ -369,10 +369,10 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
 /* ------------------------------------------------------------------ */
 
 export const LAYERS: Record<string, { y: number; c: number; name: string }> = {
-  db:  { y: -2.8, c: 0xba7517, name: "database" },
-  be:  { y: -0.9, c: 0x1d9e75, name: "backend" },
-  api: { y: 0.9,  c: 0x7f77dd, name: "api" },
-  fe:  { y: 2.8,  c: 0xd85a30, name: "frontend" },
+  db:  { y: -9,  c: 0xba7517, name: "database" },
+  be:  { y: -3,  c: 0x1d9e75, name: "backend" },
+  api: { y: 3,   c: 0x7f77dd, name: "api" },
+  fe:  { y: 9,   c: 0xd85a30, name: "frontend" },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -750,7 +750,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.gtx = mesh.position.x;
       s.gty = mesh.position.y;
       s.gtz = mesh.position.z;
-      s.grr = Math.min(s.rr, 12);
+      s.grr = Math.min(s.rr, 16);
     } else {
       onSelectRef.current?.(null);
 
@@ -911,7 +911,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
     ND.forEach((n) => {
       const ly = LAYERS[n.l];
-      const h = n.loc ? Math.max(0.2, Math.min(3.5, Math.sqrt(n.loc) * 0.08)) : 0.3;
+      const h = n.loc ? Math.max(0.25, Math.min(1.6, Math.sqrt(n.loc) * 0.045)) : 0.3;
 
       const nodeColor = getRiskColor(n.risk, ly.c);
       let emissiveColor = 0x000000;
@@ -922,8 +922,8 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
       if (n.hotspot) { emissiveColor = 0xff4444; emissiveIntensity = 0.35; }
 
-      const w = Math.min(1.05 + (n.fanIn || 0) * 0.08, 2.2);
-      const d = n.hotspot ? 0.82 : 0.62;
+      const w = Math.min(0.7 + (n.fanIn || 0) * 0.05, 1.4);
+      const d = n.hotspot ? 0.6 : 0.5;
 
       /* Single solid-color MeshStandardMaterial per node (no baked textures) */
       const mat = new THREE.MeshStandardMaterial({
@@ -1178,7 +1178,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     }
 
     /* state object */
-    const initialRr = Math.max(10, Math.min(20, gridExtent * 0.65));
+    const initialRr = Math.max(18, Math.min(32, gridExtent * 0.9));
     const s: NonNullable<typeof sceneRef.current> = {
       renderer,
       css2dRenderer,
@@ -1318,7 +1318,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      s.rr = Math.max(4, Math.min(80, s.rr + e.deltaY * 0.05));
+      s.rr = Math.max(6, Math.min(100, s.rr + e.deltaY * 0.06));
       s.grr = s.rr;
       updateCamera(s);
     }
@@ -1422,7 +1422,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
          Only labels close to the camera target AND within zoom range are shown.
          This prevents the label soup effect. */
       const camDist = s.cam.position.distanceTo(new THREE.Vector3(s.tx, s.ty, s.tz));
-      const globalFade = clamp((25 - camDist) / 12, 0, 1);
+      const globalFade = clamp((35 - camDist) / 18, 0, 1);
       const camTarget = new THREE.Vector3(s.tx, s.ty, s.tz);
 
       s.css2dLabels.forEach(({ el, obj }) => {
@@ -1435,7 +1435,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         obj.getWorldPosition(worldPos);
         const distToTarget = worldPos.distanceTo(camTarget);
         // Labels within 8 units of camera target: full, then fade to 0 by 16 units
-        const proximityFade = clamp((12 - distToTarget) / 6, 0, 1);
+        const proximityFade = clamp((16 - distToTarget) / 8, 0, 1);
         // Selected/hovered labels always visible when zoomed in
         const isSelected = s.selectedId === el.dataset.nodeId;
         const finalOpacity = isSelected ? globalFade : globalFade * proximityFade;
