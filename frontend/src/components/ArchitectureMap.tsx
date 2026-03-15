@@ -1116,15 +1116,6 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
                 </div>
               )}
 
-              {/* Issues summary */}
-              {hasEnrichment && (orphanCount > 0 || circularCount > 0 || highRiskCount > 0) && (
-                <div className="mt-2.5 border-t border-white/5 pt-2">
-                  <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-orange-400/80">Issues Found</div>
-                  {highRiskCount > 0 && <div className="text-[10px] text-red-300 py-0.5">{highRiskCount} high-risk file{highRiskCount !== 1 ? "s" : ""}</div>}
-                  {circularCount > 0 && <div className="text-[10px] text-orange-300 py-0.5">{circularCount} file{circularCount !== 1 ? "s" : ""} with circular deps</div>}
-                  {orphanCount > 0 && <div className="text-[10px] text-slate-400 py-0.5">{orphanCount} orphan file{orphanCount !== 1 ? "s" : ""} (no connections)</div>}
-                </div>
-              )}
             </div>
           )}
         </div>
