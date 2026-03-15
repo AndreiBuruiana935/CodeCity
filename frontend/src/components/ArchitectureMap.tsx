@@ -134,7 +134,7 @@ const STATIC_CO: Conn[] = [
 /*  DYNAMIC REPO → ARCHITECTURE DATA                                   */
 /* ------------------------------------------------------------------ */
 
-function classifyLayer(path: string): "db" | "be" | "api" | "fe" {
+export function classifyLayer(path: string): "db" | "be" | "api" | "fe" {
   const p = path.toLowerCase();
   if (/\/(api|routes|controllers|endpoints)\//.test(p) || /\/server\.(ts|js|mjs)$/.test(p))
     return "api";
@@ -193,7 +193,7 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
 /*  LAYER CONFIG                                                       */
 /* ------------------------------------------------------------------ */
 
-const LAYERS: Record<string, { y: number; c: number; name: string }> = {
+export const LAYERS: Record<string, { y: number; c: number; name: string }> = {
   db:  { y: -7,   c: 0xba7517, name: "database" },
   be:  { y: -2.5, c: 0x1d9e75, name: "backend" },
   api: { y: 2.5,  c: 0x7f77dd, name: "api" },
@@ -201,7 +201,7 @@ const LAYERS: Record<string, { y: number; c: number; name: string }> = {
 };
 
 const LAYER_KEYS = ["db", "be", "api", "fe"] as const;
-const FILTER_BUTTONS = [
+export const FILTER_BUTTONS = [
   { id: "all", label: "All" },
   { id: "db",  label: "Database" },
   { id: "be",  label: "Backend" },
@@ -218,9 +218,10 @@ interface Props {
   city?: CitySchema | null;
   highlightNodeId?: string | null;
   onHighlightConsumed?: () => void;
+  controlledFilters?: Set<string>;
 }
 
-export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHighlightConsumed }: Props) {
+export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHighlightConsumed, controlledFilters }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -355,6 +356,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       el.style.display = showAll || (n && filters.has(n.l)) ? "" : "none";
     });
   }, []);
+
+  /* ---- sync from controlled filters prop ---- */
+  useEffect(() => {
+    if (controlledFilters) {
+      setActiveFilters(controlledFilters);
+      applyFilter(controlledFilters);
+    }
+  }, [controlledFilters, applyFilter]);
 
   /* ---- scene init ---- */
   useEffect(() => {
@@ -569,6 +578,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
     }
     function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;          // plain scroll → page scrolls; Ctrl/Cmd+scroll → zoom
       e.preventDefault();
       s.rr = Math.max(8, Math.min(60, s.rr + e.deltaY * 0.07));
       updateCamera(s);
@@ -734,25 +744,29 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     fe: ND.filter((n) => n.l === "fe").length,
   };
 
+  const isControlled = !!controlledFilters;
+
   return (
     <div className="w-full">
-      {/* filter buttons */}
-      <div className="mb-2 flex flex-wrap items-center justify-center gap-2">
-        <span className="mr-1 text-[11px] text-slate-400">Layer:</span>
-        {FILTER_BUTTONS.map((btn) => (
-          <button
-            key={btn.id}
-            onClick={() => handleFilter(btn.id)}
-            className={`rounded-full border px-3.5 py-1 text-[11px] font-medium transition ${
-              activeFilters.has(btn.id)
-                ? "border-cyan-300/60 bg-white text-slate-950 shadow-[0_0_10px_rgba(103,232,249,0.2)]"
-                : "border-slate-600/50 bg-transparent text-slate-400 hover:border-slate-500 hover:text-slate-200"
-            }`}
-          >
-            {btn.label}
-          </button>
-        ))}
-      </div>
+      {/* filter buttons — hidden when controlled externally */}
+      {!isControlled && (
+        <div className="mb-2 flex flex-wrap items-center justify-center gap-2">
+          <span className="mr-1 text-[11px] text-slate-400">Layer:</span>
+          {FILTER_BUTTONS.map((btn) => (
+            <button
+              key={btn.id}
+              onClick={() => handleFilter(btn.id)}
+              className={`rounded-full border px-3.5 py-1 text-[11px] font-medium transition ${
+                activeFilters.has(btn.id)
+                  ? "border-cyan-300/60 bg-white text-slate-950 shadow-[0_0_10px_rgba(103,232,249,0.2)]"
+                  : "border-slate-600/50 bg-transparent text-slate-400 hover:border-slate-500 hover:text-slate-200"
+              }`}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 3D container */}
       <div ref={containerRef} className="relative w-full" style={{ height: 560 }}>
@@ -785,6 +799,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       </div>
 
       {/* legend */}
+      {!isControlled && (
       <div className="mt-2.5 flex flex-wrap items-center gap-3.5 text-xs text-slate-400">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#BA7517" }} />
@@ -806,6 +821,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           {ND.length} nodes · {CO.length} connections
         </span>
       </div>
+      )}
     </div>
   );
 }
