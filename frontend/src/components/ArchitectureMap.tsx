@@ -151,7 +151,7 @@ export function classifyLayer(path: string): "db" | "be" | "api" | "fe" {
   return "fe";
 }
 
-function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
+function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: number } {
   const allBuildings = city.city.districts.flatMap((d) => d.buildings);
 
   const ND: NodeDef[] = allBuildings.map((b) => ({
@@ -167,11 +167,14 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
   const byLayer: Record<string, NodeDef[]> = { db: [], be: [], api: [], fe: [] };
   ND.forEach((n) => byLayer[n.l].push(n));
 
+  const MIN_SPACING = 2.8;
+  let maxExtent = 22;
+
   for (const layerNodes of Object.values(byLayer)) {
     const count = layerNodes.length;
     if (!count) continue;
     const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.5)));
-    const spacing = Math.min(2.5, 18 / cols);
+    const spacing = MIN_SPACING;
     layerNodes.forEach((n, i) => {
       const row = Math.floor(i / cols);
       const col = i % cols;
@@ -179,6 +182,9 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
       n.x = (col - (cols - 1) / 2) * spacing;
       n.z = (row - (totalRows - 1) / 2) * (spacing * 0.85);
     });
+    for (const n of layerNodes) {
+      maxExtent = Math.max(maxExtent, Math.abs(n.x) * 2 + 6, Math.abs(n.z) * 2 + 6);
+    }
   }
 
   const nodeIds = new Set(ND.map((n) => n.id));
@@ -186,7 +192,7 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
     .filter((r) => nodeIds.has(r.from) && nodeIds.has(r.to) && r.from !== r.to)
     .map((r) => [r.from, r.to]);
 
-  return { ND, CO };
+  return { ND, CO, extent: maxExtent };
 }
 
 /* ------------------------------------------------------------------ */
@@ -235,10 +241,11 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   /* compute nodes/connections from repo data or fall back to static */
   const archData = useMemo(() => {
     if (city) return cityToArchData(city);
-    return { ND: STATIC_ND, CO: STATIC_CO };
+    return { ND: STATIC_ND, CO: STATIC_CO, extent: 22 };
   }, [city]);
   const ND = archData.ND;
   const CO = archData.CO;
+  const extent = archData.extent;
   const coRef = useRef(CO);
   coRef.current = CO;
   const ndRef = useRef(ND);
@@ -258,6 +265,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     ph: number;
     th: number;
     rr: number;
+    tx: number;
+    ty: number;
+    tz: number;
+    gtx: number;
+    gty: number;
+    gtz: number;
+    grr: number;
+    pan: boolean;
     drag: boolean;
     lx: number;
     ly: number;
@@ -281,11 +296,11 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   /* ---- updateCamera helper ---- */
   const updateCamera = useCallback((s: NonNullable<typeof sceneRef.current>) => {
     s.cam.position.set(
-      s.rr * Math.sin(s.ph) * Math.sin(s.th),
-      s.rr * Math.cos(s.ph),
-      s.rr * Math.sin(s.ph) * Math.cos(s.th),
+      s.tx + s.rr * Math.sin(s.ph) * Math.sin(s.th),
+      s.ty + s.rr * Math.cos(s.ph),
+      s.tz + s.rr * Math.sin(s.ph) * Math.cos(s.th),
     );
-    s.cam.lookAt(0, 0, 0);
+    s.cam.lookAt(s.tx, s.ty, s.tz);
   }, []);
 
   /* ---- selection logic ---- */
@@ -330,6 +345,12 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         );
         (n.material as THREE.MeshStandardMaterial).opacity = isSel || isAdj ? 1 : 0.16;
       });
+
+      /* animate camera toward selected node */
+      s.gtx = mesh.position.x;
+      s.gty = mesh.position.y;
+      s.gtz = mesh.position.z;
+      s.grr = Math.min(s.rr, 18);
     } else {
       setSelData(null);
       onSelectRef.current?.(null);
@@ -340,6 +361,11 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.ml.forEach((n) => {
         (n.material as THREE.MeshStandardMaterial).opacity = 0.88;
       });
+
+      /* keep current view on deselect */
+      s.gtx = s.tx;
+      s.gty = s.ty;
+      s.gtz = s.tz;
     }
   }, []);
 
@@ -385,7 +411,11 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
     /* scene + camera */
     const scene = new THREE.Scene();
-    const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, 200);
+    const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, 500);
+
+    /* dynamic grid extent based on node layout */
+    const gridExtent = extent;
+    const gridDivisions = Math.max(11, Math.round(gridExtent / 2));
 
     /* lights */
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -398,13 +428,13 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
     /* layer planes + grids */
     Object.values(LAYERS).forEach((l) => {
-      const g = new THREE.GridHelper(22, 11, l.c, l.c);
+      const g = new THREE.GridHelper(gridExtent, gridDivisions, l.c, l.c);
       (g.material as THREE.Material).opacity = 0.08;
       (g.material as THREE.Material).transparent = true;
       g.position.y = l.y;
       scene.add(g);
 
-      const pg = new THREE.PlaneGeometry(22, 22);
+      const pg = new THREE.PlaneGeometry(gridExtent, gridExtent);
       const pm = new THREE.MeshBasicMaterial({
         color: l.c,
         transparent: true,
@@ -494,6 +524,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     });
 
     /* state object */
+    const initialRr = Math.max(26, gridExtent * 1.1);
     const s = {
       renderer,
       scene,
@@ -506,7 +537,15 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       labels,
       ph: 0.88,
       th: 0.55,
-      rr: 26,
+      rr: initialRr,
+      tx: 0,
+      ty: 0,
+      tz: 0,
+      gtx: 0,
+      gty: 0,
+      gtz: 0,
+      grr: initialRr,
+      pan: false,
       drag: false,
       lx: 0,
       ly: 0,
@@ -544,18 +583,33 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     /* ---- event handlers ---- */
     function onMouseDown(e: MouseEvent) {
       s.drag = true;
+      s.pan = e.button === 2 || e.button === 1;
       s.lx = e.clientX;
       s.ly = e.clientY;
       s.dd = 0;
       s.hasDrag = false;
-      canvas!.style.cursor = "grabbing";
+      canvas!.style.cursor = s.pan ? "move" : "grabbing";
     }
     function onMouseMove(e: MouseEvent) {
       if (s.drag) {
         s.dd += Math.abs(e.clientX - s.lx) + Math.abs(e.clientY - s.ly);
         if (s.dd > 4) s.hasDrag = true;
-        s.th -= (e.clientX - s.lx) * 0.007;
-        s.ph = Math.max(0.16, Math.min(1.46, s.ph - (e.clientY - s.ly) * 0.007));
+        if (s.pan || e.ctrlKey || e.metaKey) {
+          /* panning */
+          s.cam.updateMatrixWorld(true);
+          const right = new THREE.Vector3().setFromMatrixColumn(s.cam.matrixWorld, 0).normalize();
+          const up = new THREE.Vector3().setFromMatrixColumn(s.cam.matrixWorld, 1).normalize();
+          const panSpeed = s.rr * 0.002;
+          const dx = -(e.clientX - s.lx) * panSpeed;
+          const dy = (e.clientY - s.ly) * panSpeed;
+          s.tx += right.x * dx + up.x * dy;
+          s.ty += right.y * dx + up.y * dy;
+          s.tz += right.z * dx + up.z * dy;
+          s.gtx = s.tx; s.gty = s.ty; s.gtz = s.tz;
+        } else {
+          s.th -= (e.clientX - s.lx) * 0.007;
+          s.ph = Math.max(0.16, Math.min(1.46, s.ph - (e.clientY - s.ly) * 0.007));
+        }
         s.lx = e.clientX;
         s.ly = e.clientY;
         updateCamera(s);
@@ -569,6 +623,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     }
     function onMouseUp() {
       s.drag = false;
+      s.pan = false;
       canvas!.style.cursor = s.hov ? "pointer" : "grab";
     }
     function onClick(e: MouseEvent) {
@@ -578,9 +633,10 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       }
     }
     function onWheel(e: WheelEvent) {
-      if (!e.ctrlKey && !e.metaKey) return;          // plain scroll → page scrolls; Ctrl/Cmd+scroll → zoom
+      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      s.rr = Math.max(8, Math.min(60, s.rr + e.deltaY * 0.07));
+      s.rr = Math.max(8, Math.min(150, s.rr + e.deltaY * 0.07));
+      s.grr = s.rr;
       updateCamera(s);
     }
     function onTouchStart(e: TouchEvent) {
@@ -610,11 +666,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       cam.updateProjectionMatrix();
     }
 
+    function onContextMenu(e: Event) { e.preventDefault(); }
+
     canvas.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     canvas.addEventListener("click", onClick);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("contextmenu", onContextMenu);
     canvas.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: true });
     window.addEventListener("touchend", onTouchEnd);
@@ -628,11 +687,26 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       const dt = Math.min((t - s.lt) / 1000, 0.05);
       s.lt = t;
 
+      /* smooth camera target & zoom animation */
+      const lf = 1 - Math.pow(0.02, dt);
+      let camMoved = false;
+      if (Math.abs(s.tx - s.gtx) > 0.01 || Math.abs(s.ty - s.gty) > 0.01 || Math.abs(s.tz - s.gtz) > 0.01) {
+        s.tx += (s.gtx - s.tx) * lf;
+        s.ty += (s.gty - s.ty) * lf;
+        s.tz += (s.gtz - s.tz) * lf;
+        camMoved = true;
+      }
+      if (Math.abs(s.rr - s.grr) > 0.05) {
+        s.rr += (s.grr - s.rr) * lf;
+        camMoved = true;
+      }
+
       /* auto-rotate */
       if (!s.drag && !s.sel) {
         s.th += dt * 0.035;
-        updateCamera(s);
+        camMoved = true;
       }
+      if (camMoved) updateCamera(s);
 
       /* particles */
       s.pts.forEach((p) => {
@@ -687,6 +761,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       window.removeEventListener("mouseup", onMouseUp);
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("contextmenu", onContextMenu);
       canvas.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
@@ -694,7 +769,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       renderer.dispose();
       overlay.innerHTML = "";
     };
-  }, [updateCamera, doSel, ND, CO]);
+  }, [updateCamera, doSel, ND, CO, extent]);
 
   /* ---- external highlight ---- */
   useEffect(() => {
@@ -781,20 +856,20 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
           style={{ height: 560 }}
         />
 
-        {/* selection indicator */}
-        {selData && (
-          <div
-            className="pointer-events-none absolute bottom-3.5 right-3.5 rounded-lg border-[0.5px] border-white/15 px-3 py-2"
-            style={{ background: "rgba(8,12,22,0.85)" }}
-          >
-            <span className="text-xs font-medium text-white">{selData.lb}</span>
-            <span className="ml-2 text-[10px] capitalize text-white/40">{selData.lname}</span>
-          </div>
-        )}
-
         {/* hint text */}
-        <div className="pointer-events-none absolute bottom-3.5 left-3.5 text-[10px] text-white/20">
-          Drag to orbit · scroll to zoom · click a node
+        <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#0a0e18]/70 px-2.5 py-1.5 text-[10px] text-white/40 backdrop-blur-sm">
+          Drag to orbit · Ctrl+drag to pan · Ctrl+scroll to zoom · Click a node
+        </div>
+
+        {/* layer legend overlay */}
+        <div className="pointer-events-none absolute top-3 right-3 rounded-lg border border-white/10 bg-[#0a0e18]/85 px-3 py-2.5 backdrop-blur-sm">
+          <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-400">Layers</div>
+          {(["db", "be", "api", "fe"] as const).map(key => (
+            <div key={key} className="flex items-center gap-2 py-0.5">
+              <span className="inline-block h-2 w-2 rounded-sm" style={{ background: `#${LAYERS[key].c.toString(16).padStart(6, "0")}` }} />
+              <span className="text-[10px] capitalize text-slate-300">{LAYERS[key].name}</span>
+            </div>
+          ))}
         </div>
       </div>
 
