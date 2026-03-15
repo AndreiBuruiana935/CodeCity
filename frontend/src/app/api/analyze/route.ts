@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
             repoName: `${owner}/${repo}`,
           }),
         }),
-        90000
+        150000
       ),
     ]);
 

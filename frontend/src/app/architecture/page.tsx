@@ -350,15 +350,33 @@ export default function ArchitecturePage() {
         })).join("\n") ?? "";
 
       const fileCtx = selectedBuilding
-        ? `Currently viewing: ${selectedBuilding.path} (LOC:${selectedBuilding.linesOfCode}, risk:${selectedBuilding.riskScore}, complexity:${selectedBuilding.complexity}, deps:${selectedBuilding.dependencies.join(",")})`
+        ? `\n=== CURRENTLY SELECTED FILE ===\nPath: ${selectedBuilding.path}\nLOC: ${selectedBuilding.linesOfCode}\nRisk: ${selectedBuilding.riskScore}/100\nComplexity: ${selectedBuilding.complexity}\nDependencies: ${selectedBuilding.dependencies.join(", ") || "none"}\nFunctions: ${selectedBuilding.functions.map(f => f.name).join(", ") || "none"}\nRole: ${selectedBuilding.architecturalRole || "unknown"}\nSummary: ${selectedBuilding.aiSummary || "none"}`
         : "";
 
-      const fullContext = [onboarding?.plainEnglish ?? "", "", "=== FILE MAP ===", codeMap, "", fileCtx].join("\n");
+      const fullContext = [onboarding?.plainEnglish ?? "", "", "=== FILE MAP ===", codeMap, fileCtx].join("\n");
+
+      const conversationHistory = chatMessages.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.text,
+      }));
 
       const res = await fetch("http://localhost:3001/api/chat-guide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userQuery: userMsg.text, projectSummary: fullContext }),
+        body: JSON.stringify({
+          userQuery: userMsg.text,
+          projectSummary: fullContext,
+          messages: conversationHistory,
+          citySchema: city ? {
+            name: city.city.name,
+            language: city.city.language,
+            framework: city.city.framework,
+            architecture: city.city.architecture,
+            districts: city.city.districts.map(d => ({ name: d.name })),
+            entryPoints: city.city.entryPoints,
+            hotspots: city.city.hotspots,
+          } : null,
+        }),
       });
       const raw = await res.json();
       setChatMessages(prev => [...prev, { role: "assistant", text: raw.answer || raw.error || "No response." }]);
