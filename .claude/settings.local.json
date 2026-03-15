@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(find /c/Users/erooo/Desktop/Projects/Hackathoane/Hackathon_VH/backend/src -type f \\\\\\(-name *.ts -o -name *.js \\\\\\))"
     ]
   }
 }

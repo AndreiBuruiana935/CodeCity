@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Building, FunctionInfo } from "@/types/city";
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -18,6 +18,8 @@ interface FileDetailCardProps {
   };
   allBuildings: Building[];
   githubFileUrl: string | null;
+  repoOwner: string | null;
+  repoName: string | null;
   repoAvgLoc: number;
   onSelectBuilding: (buildingId: string) => void;
   onClose: () => void;
@@ -98,6 +100,8 @@ export default function FileDetailCard({
   stats,
   allBuildings,
   githubFileUrl,
+  repoOwner,
+  repoName,
   repoAvgLoc,
   onSelectBuilding,
   onClose,
@@ -105,6 +109,32 @@ export default function FileDetailCard({
   const [showAllFunctions, setShowAllFunctions] = useState(false);
   const [showReverseDeps, setShowReverseDeps] = useState(false);
   const [warningsOpen, setWarningsOpen] = useState(b.riskScore > 50);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeContent, setCodeContent] = useState<string | null>(null);
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  // Fetch file content on demand when code section is opened
+  useEffect(() => {
+    if (!codeOpen || codeContent !== null || codeLoading || !repoOwner || !repoName) return;
+    setCodeLoading(true);
+    setCodeError(null);
+    fetch(`/api/file-content?owner=${encodeURIComponent(repoOwner)}&repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(b.path)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) setCodeError(data.error);
+        else setCodeContent(data.content ?? "");
+      })
+      .catch(() => setCodeError("Failed to fetch file content"))
+      .finally(() => setCodeLoading(false));
+  }, [codeOpen, codeContent, codeLoading, repoOwner, repoName, b.path]);
+
+  // Reset code state when building changes
+  useEffect(() => {
+    setCodeContent(null);
+    setCodeOpen(false);
+    setCodeError(null);
+  }, [b.id]);
 
   // Compute max function complexity in file
   const maxFnComplexity = useMemo(() => {
@@ -182,14 +212,6 @@ export default function FileDetailCard({
         {/* Risk gauge */}
         <RiskGauge score={b.riskScore} size={56} />
 
-        {/* GitHub link */}
-        {githubFileUrl && (
-          <a href={githubFileUrl} target="_blank" rel="noopener noreferrer" title="Open on GitHub"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 text-slate-400 transition hover:text-white">
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" /></svg>
-          </a>
-        )}
-
         {/* Close */}
         <button onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-white">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
@@ -197,6 +219,68 @@ export default function FileDetailCard({
           </svg>
         </button>
       </div>
+
+      {/* ═══ ACTION BAR ═════════════════════════════════════ */}
+      <div className="flex items-center gap-2 border-b border-white/6 px-4 py-2">
+        {githubFileUrl && (
+          <a
+            href={githubFileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-900/15 px-3 py-1.5 text-[13px] font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-900/25"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /></svg>
+            See Code
+          </a>
+        )}
+        {repoOwner && repoName && (
+          <a
+            href={`https://github.com/${repoOwner}/${repoName}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-500/30 bg-slate-800/40 px-3 py-1.5 text-[13px] font-medium text-slate-300 transition hover:border-slate-400/50 hover:text-white"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" /></svg>
+            See Repo
+          </a>
+        )}
+        {repoOwner && repoName && (
+          <button
+            type="button"
+            onClick={() => setCodeOpen(v => !v)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition ${
+              codeOpen
+                ? "border-emerald-400/40 bg-emerald-900/20 text-emerald-200"
+                : "border-slate-500/30 bg-slate-800/40 text-slate-300 hover:border-slate-400/50 hover:text-white"
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+            {codeOpen ? "Hide Source" : "View Source"}
+          </button>
+        )}
+      </div>
+
+      {/* ═══ INLINE CODE VIEWER ═══════════════════════════════ */}
+      {codeOpen && (
+        <div className="border-b border-white/6">
+          {codeLoading && (
+            <div className="flex items-center gap-2 px-4 py-6 text-[13px] text-slate-400">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-300/40 border-t-cyan-200" />
+              Loading source...
+            </div>
+          )}
+          {codeError && (
+            <div className="px-4 py-3 text-[13px] text-red-400">{codeError}</div>
+          )}
+          {codeContent !== null && !codeLoading && (
+            <div className="relative max-h-80 overflow-auto bg-[#0d1117] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+              <pre className="p-4 text-[13px] leading-relaxed text-slate-300">
+                <code>{codeContent}</code>
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ 2. METRICS ROW ═══════════════════════════════════ */}
       <div className="grid grid-cols-4 border-b border-white/6" style={{ height: 48 }}>

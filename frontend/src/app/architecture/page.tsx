@@ -7,7 +7,7 @@ import { useAppContext } from "@/components/AppContext";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
 import dynamic from "next/dynamic";
 import type { ArchSelection } from "@/components/ArchitectureMap";
-import { classifyLayer, FILTER_BUTTONS } from "@/components/ArchitectureMap";
+import { classifyLayer } from "@/components/ArchitectureMap";
 import { parseRepoUrl } from "@/lib/github";
 import type { Building } from "@/types/city";
 import FileDetailCard from "@/components/FileDetailCard";
@@ -107,15 +107,6 @@ const DirTreeView = memo(function DirTreeView({
     </ul>
   );
 });
-
-/* ── Connection type filter buttons ─────────────────────────── */
-const CONNECTION_FILTERS = [
-  { id: "conn-all",         label: "All" },
-  { id: "conn-import",      label: "Import" },
-  { id: "conn-cross-layer", label: "Cross-layer" },
-  { id: "conn-circular",    label: "Circular" },
-  { id: "conn-type-import", label: "Type-import" },
-] as const;
 
 /* ── Risk gauge arc SVG ─────────────────────────────────────── */
 function RiskGaugeArc({ score, size = 48 }: { score: number; size?: number }) {
@@ -266,6 +257,29 @@ export default function ArchitecturePage() {
     if (allBuildings.length === 0) return 0;
     return allBuildings.reduce((sum, b) => sum + b.linesOfCode, 0) / allBuildings.length;
   }, [allBuildings]);
+
+  // Layer counts for HUD badges
+  const layerCounts = useMemo(() => {
+    const counts = { db: 0, be: 0, api: 0, fe: 0 };
+    for (const b of allBuildings) {
+      const layer = classifyLayer(b.path, b.architecturalRole, b.aiLayer);
+      counts[layer]++;
+    }
+    return counts;
+  }, [allBuildings]);
+
+  // Connection type counts for HUD
+  const connCounts = useMemo(() => {
+    if (!city) return { import: 0, "cross-layer": 0, circular: 0, "type-import": 0, total: 0 };
+    const roads = city.city.roads;
+    return {
+      import: roads.filter(r => r.type === "import").length,
+      "cross-layer": roads.filter(r => r.type === "cross-layer").length,
+      circular: roads.filter(r => r.type === "circular").length,
+      "type-import": roads.filter(r => r.type === "type-import").length,
+      total: roads.length,
+    };
+  }, [city]);
 
   const selectedBuilding = useMemo<Building | null>(() => {
     if (!selected) return null;
@@ -749,31 +763,72 @@ export default function ArchitecturePage() {
           </div>
 
           {/* ── Floating HUD: bottom-left ──────────────────── */}
-          <div className="pointer-events-auto absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-3 py-1 backdrop-blur-xl">
-            {/* Layer filters */}
-            {FILTER_BUTTONS.map((btn) => (
+          <div className="pointer-events-auto absolute bottom-3 left-3 z-20 flex flex-col gap-2">
+            {/* Layer filter row */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-slate-950/80 px-2.5 py-1.5 backdrop-blur-xl">
+              <span className="mr-1 text-[13px] font-medium text-slate-500">Layers</span>
               <button
-                key={btn.id}
-                onClick={() => handleFilter(btn.id)}
-                className={`rounded-full px-2.5 py-0.5 text-[13px] font-medium transition ${
-                  activeFilters.has(btn.id)
-                    ? "bg-white/15 text-white"
-                    : "text-slate-500 hover:text-slate-300"
+                onClick={() => handleFilter("all")}
+                className={`rounded-lg px-2.5 py-1 text-[13px] font-medium transition ${
+                  activeFilters.has("all")
+                    ? "bg-white/12 text-white shadow-sm"
+                    : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
                 }`}
               >
-                {btn.label}
+                All
               </button>
-            ))}
-            <span className="mx-1 h-4 w-px bg-white/10" />
-            {/* Connection type filters (placeholder — wired in Step 3) */}
-            {CONNECTION_FILTERS.slice(0, 3).map((btn) => (
-              <button
-                key={btn.id}
-                className="rounded-full px-2 py-0.5 text-[13px] text-slate-600 transition hover:text-slate-400"
-              >
-                {btn.label}
-              </button>
-            ))}
+              {(["db", "be", "api", "fe"] as const).map((key) => {
+                const colors: Record<string, string> = { db: "#ba7517", be: "#1d9e75", api: "#7f77dd", fe: "#d85a30" };
+                const labels: Record<string, string> = { db: "Database", be: "Backend", api: "API", fe: "Frontend" };
+                const active = activeFilters.has(key) || activeFilters.has("all");
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleFilter(key)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[13px] font-medium transition ${
+                      active
+                        ? "bg-white/10 text-white shadow-sm"
+                        : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    }`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: colors[key], opacity: active ? 1 : 0.4 }}
+                    />
+                    {labels[key]}
+                    <span className={`text-[13px] tabular-nums ${active ? "text-slate-400" : "text-slate-600"}`}>
+                      {layerCounts[key]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Connection type filter row */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-slate-950/80 px-2.5 py-1.5 backdrop-blur-xl">
+              <span className="mr-1 text-[13px] font-medium text-slate-500">Edges</span>
+              {([
+                { id: "conn-all",         label: "All",         color: "#94a3b8", count: connCounts.total },
+                { id: "conn-cross-layer", label: "Cross-layer", color: "#7f77dd", count: connCounts["cross-layer"] },
+                { id: "conn-circular",    label: "Circular",    color: "#ef4444", count: connCounts.circular },
+                { id: "conn-import",      label: "Import",      color: "#3d7acc", count: connCounts.import },
+                { id: "conn-type-import", label: "Type",        color: "#888888", count: connCounts["type-import"] },
+              ] as const).map((btn) => (
+                <button
+                  key={btn.id}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
+                >
+                  <span
+                    className="h-1.5 w-3 rounded-full"
+                    style={{ backgroundColor: btn.color }}
+                  />
+                  {btn.label}
+                  {btn.count > 0 && (
+                    <span className="text-[13px] tabular-nums text-slate-600">{btn.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Minimap is now rendered inside ArchitectureMap (bottom-right) */}
@@ -785,9 +840,16 @@ export default function ArchitecturePage() {
             const total = onboarding.guidedTour.length;
             const isFirst = tourStep === 0;
             const isLast = tourStep === total - 1;
+            // Resolve building data for this tour step
+            const tourBuilding = allBuildings.find(b => b.id === step.buildingId);
+            const tourGithubUrl = (() => {
+              if (!repoParts || !tourBuilding) return null;
+              return `https://github.com/${repoParts.owner}/${repoParts.repo}/blob/main/${tourBuilding.path}`;
+            })();
             return (
               <div className="pointer-events-none absolute inset-0 z-20">
-                <div className="pointer-events-auto absolute bottom-16 left-3 w-80 rounded-2xl border border-emerald-400/30 bg-slate-950/95 p-5 shadow-2xl shadow-emerald-900/20 backdrop-blur-xl">
+                <div className="pointer-events-auto absolute bottom-16 left-3 w-96 max-h-[70vh] overflow-y-auto rounded-2xl border border-emerald-400/30 bg-slate-950/95 p-5 shadow-2xl shadow-emerald-900/20 backdrop-blur-xl scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                  {/* Step indicator */}
                   <div className="mb-3 flex items-center gap-2">
                     <div className="flex items-center gap-1">
                       {Array.from({ length: total }).map((_, i) => (
@@ -799,9 +861,80 @@ export default function ArchitecturePage() {
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>
-                  <h3 className="mb-1 text-[14px] font-bold text-emerald-300">{step.label}</h3>
-                  <p className="mb-2 truncate text-[13px] text-slate-400">{step.file}</p>
-                  <p className="mb-4 text-[13px] leading-relaxed text-slate-300">{step.description}</p>
+
+                  {/* Label + path */}
+                  <h3 className="mb-1 text-[15px] font-bold text-emerald-300">{step.label}</h3>
+                  <p className="mb-1 truncate text-[13px] text-slate-400">{step.file}</p>
+                  <p className="mb-3 text-[13px] leading-relaxed text-slate-300">{step.description}</p>
+
+                  {/* See Code + See Repo links */}
+                  <div className="mb-3 flex gap-2">
+                    {tourGithubUrl && (
+                      <a
+                        href={tourGithubUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-900/15 px-3 py-1.5 text-[13px] font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-900/25"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /></svg>
+                        See Code
+                      </a>
+                    )}
+                    {repoParts && (
+                      <a
+                        href={`https://github.com/${repoParts.owner}/${repoParts.repo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-500/30 bg-slate-800/40 px-3 py-1.5 text-[13px] font-medium text-slate-300 transition hover:border-slate-400/50 hover:text-white"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" /></svg>
+                        See Repo
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Functions preview (collapsed by default) */}
+                  {tourBuilding && tourBuilding.functions.length > 0 && (
+                    <details className="mb-3 rounded-lg border border-white/6 bg-white/2">
+                      <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-slate-300 hover:text-white">
+                        Functions ({tourBuilding.functions.length})
+                      </summary>
+                      <div className="max-h-32 overflow-y-auto border-t border-white/6 px-3 py-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                        {tourBuilding.functions.slice(0, 12).map((fn, i) => (
+                          <div key={i} className="flex items-center gap-2 py-0.5">
+                            <span className="text-[13px] font-medium text-cyan-300">{fn.name}</span>
+                            <span className="text-[13px] text-slate-500">({fn.params.join(", ")})</span>
+                            <span className="ml-auto text-[13px] text-slate-600">C{fn.complexity}</span>
+                          </div>
+                        ))}
+                        {tourBuilding.functions.length > 12 && (
+                          <p className="mt-1 text-[13px] text-slate-600">+{tourBuilding.functions.length - 12} more</p>
+                        )}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Dependencies preview (collapsed) */}
+                  {tourBuilding && tourBuilding.dependencies.length > 0 && (
+                    <details className="mb-3 rounded-lg border border-white/6 bg-white/2">
+                      <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-slate-300 hover:text-white">
+                        Dependencies ({tourBuilding.dependencyCount})
+                      </summary>
+                      <div className="max-h-32 overflow-y-auto border-t border-white/6 px-3 py-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                        {tourBuilding.dependencies.slice(0, 15).map((dep, i) => (
+                          <div key={i} className="flex items-center gap-2 py-0.5 text-[13px]">
+                            <span className="text-cyan-400">→</span>
+                            <span className="truncate text-slate-400">{dep}</span>
+                          </div>
+                        ))}
+                        {tourBuilding.dependencies.length > 15 && (
+                          <p className="mt-1 text-[13px] text-slate-600">+{tourBuilding.dependencies.length - 15} more</p>
+                        )}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Navigation */}
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleTourPrev}
@@ -811,10 +944,10 @@ export default function ArchitecturePage() {
                       Prev
                     </button>
                     <button
-                      onClick={() => selectBuildingById(step.buildingId)}
+                      onClick={() => { selectBuildingById(step.buildingId); setTourActive(false); }}
                       className="rounded-lg border border-cyan-400/30 bg-cyan-900/20 px-3 py-1.5 text-[13px] font-medium text-cyan-200 transition hover:border-cyan-300/50"
                     >
-                      View File
+                      Inspect
                     </button>
                     {isLast ? (
                       <button
@@ -876,6 +1009,8 @@ export default function ArchitecturePage() {
                     stats={selectedStats!}
                     allBuildings={allBuildings}
                     githubFileUrl={githubFileUrl}
+                    repoOwner={repoParts?.owner ?? null}
+                    repoName={repoParts?.repo ?? null}
                     repoAvgLoc={repoAvgLoc}
                     onSelectBuilding={selectBuildingById}
                     onClose={() => setSelected(null)}

@@ -190,12 +190,17 @@ function runLayerForce(
 ): Map<string, { x: number; z: number }> {
   const NODE_RADIUS = 0.6;
 
-  const simNodes: ForceNode[] = layerNodes.map((n) => ({
-    id: n.id,
-    fanIn: n.fanIn,
-    x: (Math.random() - 0.5) * 10,
-    y: (Math.random() - 0.5) * 10,
-  }));
+  // Seed positions in a small ring so force doesn't start from random noise
+  const simNodes: ForceNode[] = layerNodes.map((n, i) => {
+    const angle = (i / Math.max(layerNodes.length, 1)) * Math.PI * 2;
+    const r = 2 + Math.random() * 1;
+    return {
+      id: n.id,
+      fanIn: n.fanIn,
+      x: Math.cos(angle) * r,
+      y: Math.sin(angle) * r,
+    };
+  });
 
   const nodeById = new Map(simNodes.map((n) => [n.id, n]));
 
@@ -207,37 +212,51 @@ function runLayerForce(
       weight: e.weight,
     }));
 
+  // Adaptive charge: fewer nodes → less repulsion for tighter clusters
+  const chargeStrength = layerNodes.length < 8 ? -12 : layerNodes.length < 20 ? -18 : -25;
+
   const sim = forceSimulation<ForceNode>(simNodes)
     .force(
       "link",
       forceLink<ForceNode, ForceLink>(simLinks)
         .id((d) => d.id)
-        .distance((d) => 3 + (1 / Math.max(d.weight, 0.01)) * 2),
+        .distance((d) => 1.2 + (1 / Math.max(d.weight, 0.2)) * 0.6)
+        .strength(0.8),
     )
-    .force("charge", forceManyBody<ForceNode>().strength(-80))
-    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 1.5))
-    .force("center", forceCenter<ForceNode>(0, 0))
+    .force("charge", forceManyBody<ForceNode>().strength(chargeStrength))
+    .force("collide", forceCollide<ForceNode>().radius(NODE_RADIUS + 0.5).strength(0.7))
+    .force("center", forceCenter<ForceNode>(0, 0).strength(0.3))
     .stop();
 
-  // Hub nodes get a radial force
+  // Hub nodes get pulled toward center
   const hubNodes = simNodes.filter((n) => n.fanIn > 5);
   if (hubNodes.length > 0) {
     sim.force(
       "radial",
-      forceRadial<ForceNode>(4, 0, 0)
-        .strength((d) => (d.fanIn > 5 ? 0.4 : 0)),
+      forceRadial<ForceNode>(1.5, 0, 0)
+        .strength((d) => (d.fanIn > 5 ? 0.6 : 0)),
     );
   }
 
-  // Run until alpha < 0.001 or 300 ticks
+  // Run simulation
   for (let i = 0; i < 300; i++) {
     sim.tick();
     if (sim.alpha() < 0.001) break;
   }
 
+  // Normalize positions to a tight target radius
+  // Small layers stay compact, big layers get slightly more room
+  const targetRadius = Math.max(3, Math.min(8, Math.sqrt(simNodes.length) * 0.9));
+  let maxR = 0;
+  for (const n of simNodes) {
+    const r = Math.sqrt((n.x ?? 0) ** 2 + (n.y ?? 0) ** 2);
+    maxR = Math.max(maxR, r);
+  }
+  const scale = maxR > 0.1 ? targetRadius / maxR : 1;
+
   const result = new Map<string, { x: number; z: number }>();
   for (const n of simNodes) {
-    result.set(n.id, { x: n.x ?? 0, z: n.y ?? 0 });
+    result.set(n.id, { x: (n.x ?? 0) * scale, z: (n.y ?? 0) * scale });
   }
   return result;
 }
@@ -307,13 +326,13 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
   ND.forEach((n) => byLayer[n.l].push(n));
 
   const layerKeys: ("db" | "be" | "api" | "fe")[] = ["db", "be", "api", "fe"];
-  let maxExtent = 22;
+  let maxSpread = 0;
 
   for (const lk of layerKeys) {
     const layerNodes = byLayer[lk];
     if (!layerNodes.length) continue;
 
-    // Collect edges that are within this layer
+    // Collect edges within this layer for force simulation
     const layerNodeIds = new Set(layerNodes.map((n) => n.id));
     const layerEdges = CO
       .filter((c) => layerNodeIds.has(c.a) && layerNodeIds.has(c.b))
@@ -333,11 +352,14 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
     }
 
     for (const n of layerNodes) {
-      maxExtent = Math.max(maxExtent, Math.abs(n.x) * 2 + 6, Math.abs(n.z) * 2 + 6);
+      maxSpread = Math.max(maxSpread, Math.abs(n.x), Math.abs(n.z));
     }
   }
 
-  return { ND, CO, extent: maxExtent };
+  // Grid extent based on actual node spread — keep it tight
+  const extent = Math.max(10, Math.min(24, maxSpread * 2 + 3));
+
+  return { ND, CO, extent };
 }
 
 /* ------------------------------------------------------------------ */
@@ -345,10 +367,10 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[]; extent: 
 /* ------------------------------------------------------------------ */
 
 export const LAYERS: Record<string, { y: number; c: number; name: string }> = {
-  db:  { y: -7,   c: 0xba7517, name: "database" },
-  be:  { y: -2.5, c: 0x1d9e75, name: "backend" },
-  api: { y: 2.5,  c: 0x7f77dd, name: "api" },
-  fe:  { y: 7,    c: 0xd85a30, name: "frontend" },
+  db:  { y: -2.8, c: 0xba7517, name: "database" },
+  be:  { y: -0.9, c: 0x1d9e75, name: "backend" },
+  api: { y: 0.9,  c: 0x7f77dd, name: "api" },
+  fe:  { y: 2.8,  c: 0xd85a30, name: "frontend" },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -687,7 +709,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.gtx = mesh.position.x;
       s.gty = mesh.position.y;
       s.gtz = mesh.position.z;
-      s.grr = Math.min(s.rr, 18);
+      s.grr = Math.min(s.rr, 12);
     } else {
       onSelectRef.current?.(null);
 
@@ -804,8 +826,8 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, Math.max(500, extent * 4));
 
-    const gridExtent = extent;
-    const gridDivisions = Math.max(11, Math.round(gridExtent / 2));
+    const gridExtent = Math.min(extent, 22);
+    const gridDivisions = Math.max(8, Math.round(gridExtent / 3));
 
     /* lights */
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -819,7 +841,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     /* layer planes + grids */
     Object.values(LAYERS).forEach((l) => {
       const g = new THREE.GridHelper(gridExtent, gridDivisions, l.c, l.c);
-      (g.material as THREE.Material).opacity = 0.08;
+      (g.material as THREE.Material).opacity = 0.05;
       (g.material as THREE.Material).transparent = true;
       g.position.y = l.y;
       scene.add(g);
@@ -828,7 +850,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       const pm = new THREE.MeshBasicMaterial({
         color: l.c,
         transparent: true,
-        opacity: 0.025,
+        opacity: 0.015,
         side: THREE.DoubleSide,
       });
       const pp = new THREE.Mesh(pg, pm);
@@ -1111,7 +1133,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     }
 
     /* state object */
-    const initialRr = Math.max(26, gridExtent * 1.1);
+    const initialRr = Math.max(10, Math.min(20, gridExtent * 0.65));
     const s: NonNullable<typeof sceneRef.current> = {
       renderer,
       css2dRenderer,
@@ -1125,7 +1147,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       cr,
       pts: pts2,
       layerLabels,
-      ph: 0.88,
+      ph: 0.72,
       th: 0.55,
       rr: initialRr,
       tx: 0,
@@ -1251,7 +1273,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      s.rr = Math.max(8, Math.min(150, s.rr + e.deltaY * 0.07));
+      s.rr = Math.max(4, Math.min(80, s.rr + e.deltaY * 0.05));
       s.grr = s.rr;
       updateCamera(s);
     }
@@ -1353,7 +1375,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
 
       /* CSS2D label zoom-based opacity */
       const camDist = s.cam.position.distanceTo(new THREE.Vector3(s.tx, s.ty, s.tz));
-      const labelOpacity = clamp((40 - camDist) / 20, 0, 1);
+      const labelOpacity = clamp((30 - camDist) / 15, 0, 1);
       s.css2dLabels.forEach(({ el }) => {
         el.style.opacity = String(labelOpacity);
       });
