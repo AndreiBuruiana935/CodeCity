@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "@/components/AppContext";
@@ -15,6 +15,70 @@ const ArchitectureMap = dynamic(() => import("@/components/ArchitectureMap"), {
     </div>
   ),
 });
+
+/* ── Directory tree types & component ──────────────────────── */
+interface DirTreeNode {
+  name: string;
+  path: string;
+  children: DirTreeNode[];
+  fileId?: string;
+}
+
+function DirTreeView({
+  nodes,
+  onSelectFile,
+  depth = 0,
+}: {
+  nodes: DirTreeNode[];
+  onSelectFile: (fileId: string) => void;
+  depth?: number;
+}) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  return (
+    <ul className="space-y-px">
+      {nodes.map((n) => {
+        const isDir = n.children.length > 0;
+        const open = !collapsed[n.path];
+        return (
+          <li key={n.path}>
+            <button
+              type="button"
+              onClick={() => {
+                if (isDir) {
+                  setCollapsed((p) => ({ ...p, [n.path]: !p[n.path] }));
+                } else if (n.fileId) {
+                  onSelectFile(n.fileId);
+                }
+              }}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition hover:bg-slate-800/60"
+              style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            >
+              {isDir ? (
+                <svg
+                  className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
+                  fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3 shrink-0 text-slate-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+              )}
+              <span className={`truncate ${isDir ? "font-medium text-slate-300" : "text-slate-400"}`}>
+                {n.name}
+              </span>
+            </button>
+            {isDir && open && (
+              <DirTreeView nodes={n.children} onSelectFile={onSelectFile} depth={depth + 1} />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export default function ArchitecturePage() {
   const { status } = useSession();
@@ -31,6 +95,8 @@ export default function ArchitecturePage() {
   const [selected, setSelected] = useState<ArchSelection | null>(null);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [dirSidebarOpen, setDirSidebarOpen] = useState(true);
+  const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
 
   // If nothing is loading and no city, redirect to landing
   useEffect(() => {
@@ -80,6 +146,45 @@ export default function ArchitecturePage() {
     }
   }, [selected, city]);
 
+  // Build directory tree from city data
+  const dirTree = useMemo(() => {
+    if (!city) return [] as DirTreeNode[];
+    const allFiles = city.city.districts.flatMap((d) =>
+      d.buildings.map((b) => ({ id: b.id, path: b.path, filename: b.filename }))
+    );
+    const root: DirTreeNode = { name: "", path: "", children: [] };
+    for (const f of allFiles) {
+      const parts = f.path.split("/").filter(Boolean);
+      let cur = root;
+      for (let i = 0; i < parts.length; i++) {
+        const isLast = i === parts.length - 1;
+        let child = cur.children.find((c) => c.name === parts[i]);
+        if (!child) {
+          child = {
+            name: parts[i],
+            path: parts.slice(0, i + 1).join("/"),
+            children: [],
+            ...(isLast ? { fileId: f.id } : {}),
+          };
+          cur.children.push(child);
+        }
+        if (isLast && !child.fileId) child.fileId = f.id;
+        cur = child;
+      }
+    }
+    function sortTree(node: DirTreeNode) {
+      node.children.sort((a, b) => {
+        const aDir = a.children.length > 0 ? 0 : 1;
+        const bDir = b.children.length > 0 ? 0 : 1;
+        if (aDir !== bDir) return aDir - bDir;
+        return a.name.localeCompare(b.name);
+      });
+      node.children.forEach(sortTree);
+    }
+    sortTree(root);
+    return root.children;
+  }, [city]);
+
   // Loading screen
   if (!city) {
     return (
@@ -110,36 +215,50 @@ export default function ArchitecturePage() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-[#070d17] text-slate-100">
-      {/* Top bar */}
-      <div className="z-20 shrink-0 border-b border-cyan-300/15 bg-slate-950/90 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-5 py-2.5">
+      {/* Top bar — matches Projects Workspace */}
+      <div className="z-20 shrink-0 border-b border-slate-700/40 bg-slate-950/90 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-6 py-3 md:px-10">
           <div className="flex items-center gap-4">
-            <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-lg font-bold text-transparent">
+            <h1 className="bg-linear-to-r from-cyan-200 via-blue-200 to-emerald-200 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent sm:text-4xl">
               Architecture Map
             </h1>
-            <span className="font-mono text-sm text-slate-300">
-              {city.city.name}
-            </span>
-            <span className="text-xs text-slate-500">
-              {city.city.language} / {city.city.framework} / {city.city.architecture}
+            <div className="hidden items-center gap-2 rounded-lg border border-slate-600/40 bg-slate-900/60 px-3 py-1.5 sm:inline-flex">
+              <span className="font-mono text-sm font-medium text-cyan-100">
+                {city.city.name}
+              </span>
+            </div>
+            <span className="hidden text-xs text-slate-500 md:inline">
+              {city.city.language} · {city.city.framework} · {city.city.architecture}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
+              type="button"
+              onClick={() => setDirSidebarOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>
+              Files
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 resetCity();
                 router.push("/");
               }}
-              className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
             >
-              New
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+              Home
             </button>
             {status === "authenticated" && (
               <button
+                type="button"
                 onClick={() => signOut()}
-                className="rounded-lg border border-slate-600/50 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-300/50 hover:text-cyan-100"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100"
               >
-                Sign out
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
+                Sign Out
               </button>
             )}
           </div>
@@ -148,9 +267,37 @@ export default function ArchitecturePage() {
 
       {/* Main content */}
       <div className="flex min-h-0 flex-1">
-        {/* 3D map */}
+        {/* Directory sidebar */}
+        {dirSidebarOpen && (
+          <div className="w-64 shrink-0 overflow-y-auto border-r border-slate-700/40 bg-slate-950/90 backdrop-blur-xl">
+            <div className="px-4 py-3 border-b border-slate-700/40">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200">File Explorer</h2>
+            </div>
+            <div className="px-2 py-2">
+              <DirTreeView nodes={dirTree} onSelectFile={(fileId) => {
+                // Find the building and trigger the select callback
+                const building = city.city.districts
+                  .flatMap((d) => d.buildings)
+                  .find((b) => b.id === fileId);
+                if (building) {
+                  setSelected({
+                    id: building.id,
+                    label: building.filename,
+                    layer: "frontend",
+                    connectionCount: 0,
+                    connectedTo: [],
+                  });
+                  // Trigger the ArchitectureMap to highlight this node externally
+                  setHighlightNodeId(fileId);
+                }
+              }} />
+            </div>
+          </div>
+        )}
+
+        {/* Architecture map */}
         <div className="relative min-w-0 flex-1 overflow-auto px-5 py-4">
-          <ArchitectureMap onSelect={handleSelect} city={city} />
+          <ArchitectureMap onSelect={handleSelect} city={city} highlightNodeId={highlightNodeId} onHighlightConsumed={() => setHighlightNodeId(null)} />
         </div>
 
         {/* Side panel */}

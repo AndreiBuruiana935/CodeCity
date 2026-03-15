@@ -14,6 +14,7 @@ interface NodeDef {
   l: "db" | "be" | "api" | "fe";
   x: number;
   z: number;
+  loc?: number;
 }
 
 type Conn = [string, string];
@@ -159,6 +160,7 @@ function cityToArchData(city: CitySchema): { ND: NodeDef[]; CO: Conn[] } {
     l: classifyLayer(b.path),
     x: 0,
     z: 0,
+    loc: b.linesOfCode || 0,
   }));
 
   // position nodes per layer
@@ -214,14 +216,16 @@ const FILTER_BUTTONS = [
 interface Props {
   onSelect?: (sel: ArchSelection | null) => void;
   city?: CitySchema | null;
+  highlightNodeId?: string | null;
+  onHighlightConsumed?: () => void;
 }
 
-export default function ArchitectureMap({ onSelect, city }: Props) {
+export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHighlightConsumed }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(["all"]));
   const [selData, setSelData] = useState<{ lb: string; lname: string; cnt: number } | null>(null);
 
   const onSelectRef = useRef(onSelect);
@@ -270,8 +274,8 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
   const selDataRef = useRef(selData);
   selDataRef.current = selData;
 
-  const filterRef = useRef(activeFilter);
-  filterRef.current = activeFilter;
+  const filterRef = useRef(activeFilters);
+  filterRef.current = activeFilters;
 
   /* ---- updateCamera helper ---- */
   const updateCamera = useCallback((s: NonNullable<typeof sceneRef.current>) => {
@@ -339,16 +343,16 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
   }, []);
 
   /* ---- filter logic ---- */
-  const applyFilter = useCallback((id: string) => {
+  const applyFilter = useCallback((filters: Set<string>) => {
     const s = sceneRef.current;
     if (!s) return;
-    s.filter = id;
+    const showAll = filters.has("all");
     s.ml.forEach((m) => {
-      m.visible = id === "all" || (m.userData as { l: string }).l === id;
+      m.visible = showAll || filters.has((m.userData as { l: string }).l);
     });
     Object.entries(s.labels).forEach(([nid, el]) => {
       const n = ndRef.current.find((x) => x.id === nid);
-      el.style.display = id === "all" || n?.l === id ? "" : "none";
+      el.style.display = showAll || (n && filters.has(n.l)) ? "" : "none";
     });
   }, []);
 
@@ -410,7 +414,8 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
 
     ND.forEach((n) => {
       const ly = LAYERS[n.l];
-      const geo = new THREE.BoxGeometry(1.05, 0.3, 0.62);
+      const h = n.loc ? Math.max(0.2, Math.min(3.5, Math.sqrt(n.loc) * 0.08)) : 0.3;
+      const geo = new THREE.BoxGeometry(1.05, h, 0.62);
       const mat = new THREE.MeshStandardMaterial({
         color: ly.c,
         metalness: 0.15,
@@ -419,7 +424,7 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
         opacity: 0.88,
       });
       const m = new THREE.Mesh(geo, mat);
-      m.position.set(n.x, ly.y, n.z);
+      m.position.set(n.x, ly.y + h / 2, n.z);
       m.userData = { id: n.id, lb: n.lb, l: n.l, lname: ly.name };
       scene.add(m);
       mm[n.id] = m;
@@ -681,11 +686,39 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
     };
   }, [updateCamera, doSel, ND, CO]);
 
+  /* ---- external highlight ---- */
+  useEffect(() => {
+    if (!highlightNodeId) return;
+    const s = sceneRef.current;
+    if (!s) return;
+    const mesh = s.mm[highlightNodeId];
+    if (mesh) doSel(mesh);
+    onHighlightConsumed?.();
+  }, [highlightNodeId, doSel, onHighlightConsumed]);
+
   /* ---- filter change handler ---- */
   const handleFilter = useCallback(
     (id: string) => {
-      setActiveFilter(id);
-      applyFilter(id);
+      setActiveFilters((prev) => {
+        let next: Set<string>;
+        if (id === "all") {
+          next = new Set(["all"]);
+        } else {
+          next = new Set(prev);
+          next.delete("all");
+          if (next.has(id)) {
+            next.delete(id);
+          } else {
+            next.add(id);
+          }
+          // If nothing selected or all 4 selected, reset to "all"
+          if (next.size === 0 || next.size === 4) {
+            next = new Set(["all"]);
+          }
+        }
+        applyFilter(next);
+        return next;
+      });
     },
     [applyFilter],
   );
@@ -711,7 +744,7 @@ export default function ArchitectureMap({ onSelect, city }: Props) {
             key={btn.id}
             onClick={() => handleFilter(btn.id)}
             className={`rounded-full border border-slate-600/50 px-3 py-1 text-[11px] transition ${
-              activeFilter === btn.id
+              activeFilters.has(btn.id)
                 ? "border-cyan-300/60 bg-white text-slate-950"
                 : "bg-transparent text-slate-400 hover:text-slate-200"
             }`}
