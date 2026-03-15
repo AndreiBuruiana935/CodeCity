@@ -94,8 +94,11 @@ export default function ProjectsPage() {
       setRepoError(null);
       try {
         const res = await fetch("/api/github/repos", { method: "GET" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load repositories");
+        const data: unknown = await res.json();
+        if (!res.ok) {
+          const err = data as { error?: string };
+          throw new Error(err.error || "Failed to load repositories");
+        }
         if (!cancelled) setRepos((data.repos || []) as UserRepo[]);
       } catch (err) {
         if (!cancelled) setRepoError(err instanceof Error ? err.message : "Failed to load repositories");
@@ -122,8 +125,11 @@ export default function ProjectsPage() {
           `/api/github/repo-details?fullName=${encodeURIComponent(fullName)}`,
           { method: "GET" }
         );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load repository details");
+        const data: unknown = await res.json();
+        if (!res.ok) {
+          const err = data as { error?: string };
+          throw new Error(err.error || "Failed to load repository details");
+        }
         if (!cancelled) setProjectDetails(data as RepoDetails);
       } catch (err) {
         if (!cancelled) setProjectDetailsError(err instanceof Error ? err.message : "Failed to load repository details");
@@ -291,8 +297,11 @@ export default function ProjectsPage() {
                   setRepoError(null);
                   try {
                     const res = await fetch("/api/github/repos", { method: "GET" });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || "Failed to reload repositories");
+                    const data: unknown = await res.json();
+                    if (!res.ok) {
+                      const err = data as { error?: string };
+                      throw new Error(err.error || "Failed to reload repositories");
+                    }
                     setRepos((data.repos || []) as UserRepo[]);
                   } catch (err) {
                     setRepoError(err instanceof Error ? err.message : "Failed to reload repositories");

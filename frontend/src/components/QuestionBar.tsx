@@ -15,6 +15,20 @@ interface ChatMessage {
   timestamp: number;
 }
 
+type QuestionApiError = { error?: string };
+
+function isQuestionResponse(payload: unknown): payload is QuestionResponse {
+  if (!payload || typeof payload !== "object") return false;
+  const p = payload as Partial<QuestionResponse>;
+  return (
+    typeof p.answer === "string" &&
+    Array.isArray(p.highlightedBuildings) &&
+    Array.isArray(p.relatedDistricts) &&
+    "cameraFlyTo" in p &&
+    typeof p.confidence === "number"
+  );
+}
+
 export default function QuestionBar({
   city,
   onboarding,
@@ -77,11 +91,18 @@ export default function QuestionBar({
         }),
       });
 
-      const data: QuestionResponse = await res.json();
+      const payload: unknown = await res.json();
 
-      if (data.error) {
-        throw new Error(data.error as string);
+      if (!res.ok) {
+        const err = payload as QuestionApiError;
+        throw new Error(err.error || "Failed to process question");
       }
+
+      if (!isQuestionResponse(payload)) {
+        throw new Error("Unexpected question response format");
+      }
+
+      const data = payload;
 
       setMessages((prev) => [
         ...prev,

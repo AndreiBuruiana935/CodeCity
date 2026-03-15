@@ -321,7 +321,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timeout);
 
       if (!res.ok) {
-        const data = await res.json();
+        const payload: unknown = await res.json();
+        const data = payload as { error?: string };
         throw new Error(data.error || "Analysis failed");
       }
 
