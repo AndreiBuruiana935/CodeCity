@@ -109,11 +109,12 @@ function shouldIncludeFile(path: string, includeTests: boolean): boolean {
 function classifyBuildingLayer(path: string, aiLayer?: Building["aiLayer"]): "database" | "backend" | "api" | "frontend" {
   if (aiLayer) return aiLayer;
   const p = path.toLowerCase();
-  if (/\/(api|routes|controllers|endpoints)\//.test(p) || /\/server\.(ts|js|mjs)$/.test(p)) return "api";
+  if (/(^|\/)(api|routes|controllers|endpoints|handlers)(\/|$)/.test(p) || /(^|\/)server\.(ts|js|mjs)$/.test(p)) return "api";
   if (/\.d\.ts$/.test(p) || /\/src\/types?\//.test(p)) return "backend";
   if (/\/(models?|schema|database|db|prisma|migrations?|entities|seeds?)\//.test(p) || /\.(sql|prisma)$/.test(p)) return "database";
-  if (/\/(lib|services?|utils?|helpers?|middleware|config|scripts?)\//.test(p) || /\.(config|rc)\.(ts|js|mjs|cjs|json)$/.test(p)) return "backend";
-  return "frontend";
+  if (/(^|\/)(lib|services?|utils?|helpers?|middleware|config|scripts?|adapters|gateways|interceptors)(\/|$)/.test(p) || /\.(config|rc)\.(ts|js|mjs|cjs|json)$/.test(p)) return "backend";
+  if (/(^|\/)(components?|pages?|views?|hooks?|ui)(\/|$)/.test(p) || /\.(tsx|jsx|css|scss|less)$/.test(p)) return "frontend";
+  return "backend";
 }
 
 /**
@@ -235,22 +236,35 @@ export async function generateCity(
   const framework = detectFramework(files);
   const architecture = detectArchitecture(files);
 
-  // Decide how many files to fetch content for based on rate limit
-  // Reserve some budget for safety
+  // In full mode, analyze all eligible in-repo code files deterministically.
+  // Reserve a few requests for retries and API calls outside blob fetches.
   const availableRequests = Math.max(0, rateLimit.remaining - 5);
-  const maxContentFetches = Math.min(
-    depth === "shallow" ? 30 : 150,
-    availableRequests
+  const filesToProcess = depth === "shallow" ? files.slice(0, 200) : files;
+  const eligibleContentFiles = filesToProcess.filter(
+    (f) => !isBinaryFile(f.path) && isCodeFile(f.path)
   );
+
+  const requestedContentFetches =
+    depth === "shallow"
+      ? Math.min(30, eligibleContentFiles.length)
+      : eligibleContentFiles.length;
+
+  if (depth === "full" && requestedContentFetches > availableRequests) {
+    throw new Error(
+      `Not enough GitHub API budget for full analysis. Need ${requestedContentFetches} blob requests, have ${availableRequests}. Add/refresh a GitHub token or use shallow mode.`
+    );
+  }
+
+  const maxContentFetches = Math.min(requestedContentFetches, availableRequests);
 
   console.log(
     `Will fetch content for up to ${maxContentFetches} of ${files.length} files`
   );
 
-  // Prioritize files for content fetching
+  // Prioritize only for shallow mode. Full mode fetches all code files.
   const prioritized = prioritizeFiles(files);
   const fetchSet = new Set(
-    prioritized
+    (depth === "shallow" ? prioritized : filesToProcess)
       .filter((f) => !isBinaryFile(f.path) && isCodeFile(f.path))
       .slice(0, maxContentFetches)
       .map((f) => f.path)
@@ -267,8 +281,7 @@ export async function generateCity(
   const buildingsByPath = new Map<string, Building>();
 
   // Process files: fetch content only for prioritized ones
-  const BATCH_SIZE = 15; // Parallel fetches per batch (safe with 5000 req/hr auth limit)
-  const filesToProcess = files.slice(0, depth === "shallow" ? 200 : 1000);
+  const BATCH_SIZE = depth === "shallow" ? 15 : 10;
 
   // Split into content-fetch group and metadata-only group
   const contentFiles = filesToProcess.filter((f) => fetchSet.has(f.path));
@@ -352,16 +365,16 @@ export async function generateCity(
     }
   }
 
-  const pairSet = new Set<string>(roadMap.keys());
+  const cycleEdgeSet = detectCycleEdges(roadMap);
   for (const [key, meta] of roadMap) {
     const [from, to] = key.split("->");
-    const isCircular = pairSet.has(`${to}->${from}`);
+    const isCircular = cycleEdgeSet.has(key);
     const type: Road["type"] = isCircular
       ? "circular"
-      : meta.hasTypeImport
-      ? "type-import"
       : meta.crossLayer
       ? "cross-layer"
+      : meta.hasTypeImport
+      ? "type-import"
       : "import";
     roads.push({ from, to, type, weight: meta.weight });
   }
@@ -419,9 +432,21 @@ function findBuildingByImport(
   }
 
   const extensions = [
-    "", ".ts", ".tsx", ".js", ".jsx", ".mjs",
-    "/index.ts", "/index.tsx", "/index.js",
+    "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json",
+    "/index.ts", "/index.tsx", "/index.js", "/index.jsx", "/index.mjs",
   ];
+
+  const tryCandidates = (basePath: string): Building | null => {
+    const normalizedBase = basePath.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+    const matches = new Map<string, Building>();
+    for (const ext of extensions) {
+      const candidate = normalizedBase + ext;
+      const bld = buildingsByPath.get(candidate);
+      if (bld) matches.set(bld.id, bld);
+    }
+    if (matches.size === 1) return matches.values().next().value || null;
+    return null;
+  };
 
   // Handle @/ and ~/ aliases → resolve to src/
   if (importPath.startsWith("@/") || importPath.startsWith("~/")) {
@@ -429,10 +454,8 @@ function findBuildingByImport(
     // Try common src roots
     const srcPrefixes = ["src/", "frontend/src/", "app/", ""];
     for (const prefix of srcPrefixes) {
-      for (const ext of extensions) {
-        const bld = buildingsByPath.get(prefix + stripped + ext);
-        if (bld) return bld;
-      }
+      const match = tryCandidates(prefix + stripped);
+      if (match) return match;
     }
   }
 
@@ -452,22 +475,86 @@ function findBuildingByImport(
     }
 
     const base = resolved.join("/");
-    for (const ext of extensions) {
-      const bld = buildingsByPath.get(base + ext);
-      if (bld) return bld;
-    }
+    const match = tryCandidates(base);
+    if (match) return match;
   }
 
-  // Loose fallback — only match against the last segment to avoid false positives
-  const segments = importPath.split("/");
-  const tail = segments.slice(-2).join("/"); // e.g. "lib/github"
-  for (const [path, bld] of buildingsByPath) {
-    if (path.endsWith("/" + tail) || path.endsWith("/" + tail + ".ts") || path.endsWith("/" + tail + ".tsx")) {
-      return bld;
+  // Absolute import from repo roots commonly used by TS/Node projects.
+  if (!importPath.startsWith(".")) {
+    const rootPrefixes = ["", "src/", "frontend/src/", "backend/src/", "app/"];
+    for (const prefix of rootPrefixes) {
+      const match = tryCandidates(prefix + importPath);
+      if (match) return match;
     }
   }
 
   return null;
+}
+
+function detectCycleEdges(
+  roadMap: Map<string, { weight: number; hasTypeImport: boolean; crossLayer: boolean }>
+): Set<string> {
+  const adjacency = new Map<string, Set<string>>();
+  for (const key of roadMap.keys()) {
+    const [from, to] = key.split("->");
+    if (!adjacency.has(from)) adjacency.set(from, new Set());
+    adjacency.get(from)!.add(to);
+    if (!adjacency.has(to)) adjacency.set(to, new Set());
+  }
+
+  const indexMap = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  let index = 0;
+  const components: string[][] = [];
+
+  const strongConnect = (node: string) => {
+    indexMap.set(node, index);
+    lowLink.set(node, index);
+    index += 1;
+    stack.push(node);
+    onStack.add(node);
+
+    for (const next of adjacency.get(node) || []) {
+      if (!indexMap.has(next)) {
+        strongConnect(next);
+        lowLink.set(node, Math.min(lowLink.get(node)!, lowLink.get(next)!));
+      } else if (onStack.has(next)) {
+        lowLink.set(node, Math.min(lowLink.get(node)!, indexMap.get(next)!));
+      }
+    }
+
+    if (lowLink.get(node) === indexMap.get(node)) {
+      const component: string[] = [];
+      while (stack.length > 0) {
+        const top = stack.pop()!;
+        onStack.delete(top);
+        component.push(top);
+        if (top === node) break;
+      }
+      components.push(component);
+    }
+  };
+
+  for (const node of adjacency.keys()) {
+    if (!indexMap.has(node)) strongConnect(node);
+  }
+
+  const cycleEdges = new Set<string>();
+  for (const component of components) {
+    if (component.length < 2) continue;
+    const set = new Set(component);
+    for (const from of component) {
+      for (const to of adjacency.get(from) || []) {
+        if (set.has(to)) {
+          cycleEdges.add(`${from}->${to}`);
+        }
+      }
+    }
+  }
+
+  return cycleEdges;
 }
 
 function generateOnboarding(

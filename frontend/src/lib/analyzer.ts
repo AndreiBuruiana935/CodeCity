@@ -141,10 +141,18 @@ export function extractDependencies(content: string, path: string): string[] {
 
   // JS/TS imports
   if ([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext)) {
-    const importRegex = /(?:import|require)\s*\(?['"]([^'"]+)['"]\)?/g;
-    let match;
-    while ((match = importRegex.exec(content)) !== null) {
-      deps.add(match[1]);
+    const importLikePatterns = [
+      /\bimport\s+(?:type\s+)?(?:[\w*${}\s,]+\s+from\s+)?["']([^"']+)["']/g,
+      /\bexport\s+(?:type\s+)?(?:\*|{[^}]*})\s+from\s+["']([^"']+)["']/g,
+      /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+      /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    ];
+
+    for (const pattern of importLikePatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(content)) !== null) {
+        if (match[1]) deps.add(match[1]);
+      }
     }
   }
 

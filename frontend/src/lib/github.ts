@@ -123,6 +123,12 @@ export async function fetchRepoTree(
   }
   const treeData: GitHubTreeResponse = await treeRes.json();
 
+  if (treeData.truncated) {
+    throw new Error(
+      "Repository tree is too large for GitHub recursive tree API (truncated response). Full-accuracy mapping cannot continue."
+    );
+  }
+
   return treeData.tree.filter((f) => f.type === "blob");
 }
 

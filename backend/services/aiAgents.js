@@ -184,7 +184,7 @@ summary       — 2–4 plain-English sentences describing the project's overall
 entryPoints   — File paths that are primary entry points (e.g. main, index, app).
 riskZones     — Architecturally critical or fragile files based on tree position. One sentence per.
 fileRoles     — Assign EVERY code file an architectural role AND a visualization layer. Allowed roles: "controller", "model", "service", "component", "middleware", "config", "test", "utility", "route", "migration", "hook", "type", "entry". layer MUST be one of: "database", "backend", "api", "frontend". Assign layer based on the file's actual purpose in the architecture — NOT just its folder name. For example: TypeScript type definition files (.d.ts) or interfaces belong to "backend", not "database". ORM models and migration files belong to "database". React/Vue/Svelte components belong to "frontend". Express/FastAPI route handlers belong to "api". Business logic services belong to "backend". confidence is 0–1.
-circularDependencies — Pairs of files that likely import each other (bidirectional dependency). Infer from naming and import patterns in the tree. Empty array if none detected.
+circularDependencies — Do NOT guess from filenames or folder proximity. Only include a pair when the provided evidence explicitly indicates a bidirectional dependency. If no explicit evidence is provided, return an empty array.
 testCoverage  — "covered": source files that have a corresponding test file; "uncovered": source files with no apparent test. Infer from naming conventions (*.test.*, *.spec.*, __tests__/).
 Begin your response with { and end with }.`;
 
@@ -212,7 +212,8 @@ ${JSON.stringify(packageJson, null, 2)}
 REPOSITORY FILE TREE:
 ${treeStr}
 
-Analyze the full structure. Group every file into districts.
+Analyze the full structure. Group every file into districts and provide conservative role/layer enrichment.
+If there is not enough direct evidence for circular dependencies, return an empty circularDependencies array.
 Return only the JSON object. Begin with { and end with }.`;
 
   const config = _buildAxiosConfig(

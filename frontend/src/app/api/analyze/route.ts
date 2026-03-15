@@ -77,6 +77,19 @@ export async function POST(req: NextRequest) {
       ),
     ]);
 
+    const diagnostics = {
+      totalFiles: allBuildings.length,
+      filesWithDependencies: allBuildings.filter((b) => b.dependencies.length > 0).length,
+      internalImportReferences: allBuildings.reduce(
+        (sum, b) => sum + b.dependencies.filter((d) => d.startsWith(".") || d.startsWith("@/") || d.startsWith("~/") || d.startsWith("/")).length,
+        0
+      ),
+      aiSummaryStatus: summariesResult.status,
+      aiOnboardingStatus: onboardingResult.status,
+      cartographerStatus: mapResult.status,
+      cartographerAppliedRoles: 0,
+    };
+
     // Merge summaries
     if (summariesResult.status === "fulfilled") {
       const summaries = summariesResult.value;
@@ -114,6 +127,7 @@ export async function POST(req: NextRequest) {
                   const info = roleMap.get(building.path);
                   if (info) {
                     building.architecturalRole = info.role as import("@/types/city").ArchitecturalRole;
+                    diagnostics.cartographerAppliedRoles += 1;
                     const validLayers = ["database", "backend", "api", "frontend"] as const;
                     if (validLayers.includes(info.layer as typeof validLayers[number])) {
                       building.aiLayer = info.layer as typeof validLayers[number];
@@ -170,7 +184,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ city, onboarding });
+    return NextResponse.json({ city, onboarding, diagnostics });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Analysis failed";
