@@ -94,12 +94,13 @@ export default function ProjectsPage() {
       setRepoError(null);
       try {
         const res = await fetch("/api/github/repos", { method: "GET" });
-        const data: unknown = await res.json();
+        const payload: unknown = await res.json();
         if (!res.ok) {
-          const err = data as { error?: string };
+          const err = payload as { error?: string };
           throw new Error(err.error || "Failed to load repositories");
         }
-        if (!cancelled) setRepos((data.repos || []) as UserRepo[]);
+        const data = payload as { repos?: UserRepo[] };
+        if (!cancelled) setRepos(Array.isArray(data.repos) ? data.repos : []);
       } catch (err) {
         if (!cancelled) setRepoError(err instanceof Error ? err.message : "Failed to load repositories");
       } finally {
@@ -297,12 +298,13 @@ export default function ProjectsPage() {
                   setRepoError(null);
                   try {
                     const res = await fetch("/api/github/repos", { method: "GET" });
-                    const data: unknown = await res.json();
+                    const payload: unknown = await res.json();
                     if (!res.ok) {
-                      const err = data as { error?: string };
+                      const err = payload as { error?: string };
                       throw new Error(err.error || "Failed to reload repositories");
                     }
-                    setRepos((data.repos || []) as UserRepo[]);
+                    const data = payload as { repos?: UserRepo[] };
+                    setRepos(Array.isArray(data.repos) ? data.repos : []);
                   } catch (err) {
                     setRepoError(err instanceof Error ? err.message : "Failed to reload repositories");
                   } finally {
