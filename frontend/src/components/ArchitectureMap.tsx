@@ -346,6 +346,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const [selData, setSelData] = useState<{ lb: string; lname: string; cnt: number } | null>(null);
   const [legendOpen, setLegendOpen] = useState(true);
   const [showFlowOverlay, setShowFlowOverlay] = useState(false);
+  const [selectedConnType, setSelectedConnType] = useState<"all" | ConnType>("all");
   const [hoverCard, setHoverCard] = useState<{
     x: number;
     y: number;
@@ -450,6 +451,9 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   const filterRef = useRef(activeFilters);
   filterRef.current = activeFilters;
 
+  const selectedConnTypeRef = useRef<"all" | ConnType>("all");
+  selectedConnTypeRef.current = selectedConnType;
+
   /* ---- updateCamera helper ---- */
   const updateCamera = useCallback((s: NonNullable<typeof sceneRef.current>) => {
     s.cam.position.set(
@@ -458,6 +462,81 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
       s.tz + s.rr * Math.sin(s.ph) * Math.cos(s.th),
     );
     s.cam.lookAt(s.tx, s.ty, s.tz);
+  }, []);
+
+  /* ---- graph emphasis based on selected node + connection type ---- */
+  const applyGraphEmphasis = useCallback(() => {
+    const s = sceneRef.current;
+    if (!s) return;
+
+    const connType = selectedConnTypeRef.current;
+    const selectedMesh = s.sel;
+
+    if (selectedMesh) {
+      const ud = selectedMesh.userData as { id: string };
+      const adjacentIds = new Set<string>();
+
+      s.ll.forEach((line) => {
+        const ld = line.userData as { a: string; b: string; type: ConnType; baseColor: number };
+        const connectedToSelected = ld.a === ud.id || ld.b === ud.id;
+        const typeMatches = connType === "all" || ld.type === connType;
+        const on = connectedToSelected && typeMatches;
+        if (on) {
+          adjacentIds.add(ld.a === ud.id ? ld.b : ld.a);
+        }
+        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        mat.opacity = on ? 0.92 : 0.05;
+        mat.color.setHex(ld.baseColor);
+      });
+
+      s.ml.forEach((n) => {
+        const nud = n.userData as { id: string };
+        const isSel = n === selectedMesh;
+        const isAdj = adjacentIds.has(nud.id);
+        const op = isSel || isAdj ? 1 : 0.16;
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = op;
+      });
+
+      return;
+    }
+
+    if (connType === "all") {
+      s.ll.forEach((line) => {
+        const ld = line.userData as { baseColor: number; baseOpacity: number };
+        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        mat.opacity = ld.baseOpacity;
+        mat.color.setHex(ld.baseColor);
+      });
+      s.ml.forEach((n) => {
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = 0.88;
+      });
+      return;
+    }
+
+    const highlightedNodeIds = new Set<string>();
+    coRef.current.forEach((c) => {
+      if (c.type === connType) {
+        highlightedNodeIds.add(c.a);
+        highlightedNodeIds.add(c.b);
+      }
+    });
+
+    s.ll.forEach((line) => {
+      const ld = line.userData as { type: ConnType; baseColor: number };
+      const on = ld.type === connType;
+      const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+      mat.opacity = on ? 0.92 : 0.06;
+      mat.color.setHex(ld.baseColor);
+    });
+
+    s.ml.forEach((n) => {
+      const nud = n.userData as { id: string };
+      const op = highlightedNodeIds.has(nud.id) ? 0.95 : 0.14;
+      const mats = Array.isArray(n.material) ? n.material : [n.material];
+      for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = op;
+    });
   }, []);
 
   /* ---- selection logic ---- */
@@ -486,25 +565,7 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
         connectedTo: connectedLabels,
       });
 
-      s.ll.forEach((line) => {
-        const ld = line.userData as { a: string; b: string; baseColor: number };
-        const on = ld.a === ud.id || ld.b === ud.id;
-        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
-        mat.opacity = on ? 0.92 : 0.05;
-        mat.color.setHex(ld.baseColor);
-      });
-
-      s.ml.forEach((n) => {
-        const nud = n.userData as { id: string };
-        const isSel = n === mesh;
-        const isAdj = coRef.current.some(
-          (c) =>
-            (c.a === ud.id && c.b === nud.id) || (c.b === ud.id && c.a === nud.id),
-        );
-        const op = isSel || isAdj ? 1 : 0.16;
-        const mats = Array.isArray(n.material) ? n.material : [n.material];
-        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = op;
-      });
+      applyGraphEmphasis();
 
       /* animate camera toward selected node */
       s.gtx = mesh.position.x;
@@ -514,23 +575,14 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     } else {
       setSelData(null);
       onSelectRef.current?.(null);
-      s.ll.forEach((line) => {
-        const ld = line.userData as { baseColor: number; baseOpacity: number };
-        const mat = line.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
-        mat.opacity = ld.baseOpacity;
-        mat.color.setHex(ld.baseColor);
-      });
-      s.ml.forEach((n) => {
-        const mats = Array.isArray(n.material) ? n.material : [n.material];
-        for (const mt of mats) (mt as THREE.MeshStandardMaterial).opacity = 0.88;
-      });
+      applyGraphEmphasis();
 
       /* keep current view on deselect */
       s.gtx = s.tx;
       s.gty = s.ty;
       s.gtz = s.tz;
     }
-  }, []);
+  }, [applyGraphEmphasis]);
 
   /* ---- filter logic ---- */
   const applyFilter = useCallback((filters: Set<string>) => {
@@ -1322,6 +1374,10 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
     onHighlightConsumed?.();
   }, [highlightNodeId, doSel, onHighlightConsumed]);
 
+  useEffect(() => {
+    applyGraphEmphasis();
+  }, [selectedConnType, applyGraphEmphasis]);
+
   /* ---- filter change handler ---- */
   const handleFilter = useCallback(
     (id: string) => {
@@ -1526,32 +1582,66 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
               {hasEnrichment && (
                 <div className="border-t border-white/5 pt-2">
                   <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Connections</div>
-                  <div className="flex items-center gap-2 py-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConnType("all")}
+                    className={`flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition ${
+                      selectedConnType === "all" ? "bg-cyan-400/15 text-cyan-200" : "hover:bg-white/5"
+                    }`}
+                  >
+                    <span className="inline-block h-2 w-2 rounded-full border border-slate-400/60" />
+                    <span className="text-[10px]">All ({CO.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConnType("import")}
+                    className={`mt-0.5 flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition ${
+                      selectedConnType === "import" ? "bg-cyan-400/15 text-cyan-200" : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
                     <span className="inline-block h-0.5 w-4" style={{ background: "#3d7acc" }} />
-                    <span className="text-[10px] text-slate-300">Import ({connCounts.import})</span>
-                  </div>
-                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="text-[10px]">Import ({connCounts.import})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConnType("cross-layer")}
+                    className={`mt-0.5 flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition ${
+                      selectedConnType === "cross-layer" ? "bg-cyan-400/15 text-cyan-200" : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
                     <span className="inline-block h-0.5 w-4" style={{ background: "#7f77dd" }} />
-                    <span className="text-[10px] text-slate-300">Cross-layer ({connCounts.crossLayer})</span>
-                  </div>
-                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="text-[10px]">Cross-layer ({connCounts.crossLayer})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConnType("circular")}
+                    className={`mt-0.5 flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition ${
+                      selectedConnType === "circular" ? "bg-cyan-400/15 text-cyan-200" : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
                     <span
                       className="inline-block h-0.5 w-4"
                       style={{
                         background: "repeating-linear-gradient(90deg, #dc2626 0 6px, transparent 6px 10px)",
                       }}
                     />
-                    <span className="text-[10px] text-slate-300">Circular ({connCounts.circular})</span>
-                  </div>
-                  <div className="flex items-center gap-2 py-0.5">
+                    <span className="text-[10px]">Circular ({connCounts.circular})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConnType("type-import")}
+                    className={`mt-0.5 flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left transition ${
+                      selectedConnType === "type-import" ? "bg-cyan-400/15 text-cyan-200" : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
                     <span
                       className="inline-block h-0.5 w-4"
                       style={{
                         background: "repeating-linear-gradient(90deg, #888780 0 5px, transparent 5px 9px)",
                       }}
                     />
-                    <span className="text-[10px] text-slate-300">Type import ({connCounts.typeImport})</span>
-                  </div>
+                    <span className="text-[10px]">Type import ({connCounts.typeImport})</span>
+                  </button>
                 </div>
               )}
 
