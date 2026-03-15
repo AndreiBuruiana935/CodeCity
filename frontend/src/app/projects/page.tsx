@@ -63,6 +63,7 @@ export default function ProjectsPage() {
     githubToken, setGithubToken,
     cityHistory,
     analyzeRepo,
+    softResetCity,
     setError,
   } = useAppContext();
 
@@ -169,6 +170,7 @@ export default function ProjectsPage() {
 
   const openCityFromRepo = useCallback(
     async (nextRepoUrl: string) => {
+      softResetCity();
       setRepoUrl(nextRepoUrl);
       setError(null);
       router.push("/architecture");
@@ -177,17 +179,18 @@ export default function ProjectsPage() {
         router.push("/projects");
       }
     },
-    [analyzeRepo, setRepoUrl, setError, router]
+    [analyzeRepo, softResetCity, setRepoUrl, setError, router]
   );
 
   const handleAnalyzeExternal = useCallback(async () => {
     if (!repoUrl.trim()) return;
+    softResetCity();
     router.push("/architecture");
     const success = await analyzeRepo(repoUrl.trim());
     if (!success) {
       router.push("/projects");
     }
-  }, [repoUrl, analyzeRepo, router]);
+  }, [repoUrl, analyzeRepo, softResetCity, router]);
 
   if (status === "loading") {
     return (

@@ -36,7 +36,7 @@ function DirTreeView({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   return (
-    <ul className="space-y-px">
+    <ul className="space-y-0.5">
       {nodes.map((n) => {
         const isDir = n.children.length > 0;
         const open = !collapsed[n.path];
@@ -51,24 +51,31 @@ function DirTreeView({
                   onSelectFile(n.fileId);
                 }
               }}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition hover:bg-slate-800/60"
-              style={{ paddingLeft: `${depth * 12 + 8}px` }}
+              className="group flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] transition-colors hover:bg-white/5"
+              style={{ paddingLeft: `${depth * 14 + 10}px` }}
             >
               {isDir ? (
-                <svg
-                  className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
-                  fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  <svg
+                    className={`h-3 w-3 text-slate-500 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+                    fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </span>
               ) : (
-                <svg className="h-3 w-3 shrink-0 text-slate-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                </svg>
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  <svg className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </span>
               )}
-              <span className={`truncate ${isDir ? "font-medium text-slate-300" : "text-slate-400"}`}>
+              <span className={`truncate ${isDir ? "font-medium text-slate-300" : "text-slate-500 group-hover:text-slate-300"}`}>
                 {n.name}
               </span>
+              {isDir && (
+                <span className="ml-auto text-[10px] text-slate-600">{n.children.length}</span>
+              )}
             </button>
             {isDir && open && (
               <DirTreeView nodes={n.children} onSelectFile={onSelectFile} depth={depth + 1} />
@@ -90,6 +97,8 @@ export default function ArchitecturePage() {
     error,
     isAnalyzing,
     resetCity,
+    softResetCity,
+    analyzeRepo,
   } = useAppContext();
 
   const [selected, setSelected] = useState<ArchSelection | null>(null);
@@ -98,19 +107,34 @@ export default function ArchitecturePage() {
   const [dirSidebarOpen, setDirSidebarOpen] = useState(true);
   const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
 
-  // If nothing is loading and no city, redirect to landing
-  useEffect(() => {
-    if (!city && !isAnalyzing && !loadingProgress) {
-      router.push("/");
-    }
-  }, [city, isAnalyzing, loadingProgress, router]);
+  const [stayOnPage, setStayOnPage] = useState(false);
 
-  // Redirect to landing on error
+  // If nothing is loading and no city, redirect to landing (unless staying)
   useEffect(() => {
-    if (error && !city) {
+    if (!city && !isAnalyzing && !loadingProgress && !stayOnPage) {
       router.push("/");
     }
-  }, [error, city, router]);
+  }, [city, isAnalyzing, loadingProgress, router, stayOnPage]);
+
+  // Redirect to landing on error (unless staying)
+  useEffect(() => {
+    if (error && !city && !stayOnPage) {
+      router.push("/");
+    }
+  }, [error, city, router, stayOnPage]);
+
+  // Re-analyze a new repo from within this page
+  const handleReAnalyze = useCallback(async (newRepoUrl: string) => {
+    setStayOnPage(true);
+    setSelected(null);
+    setAiResponse(null);
+    softResetCity();
+    const success = await analyzeRepo(newRepoUrl);
+    setStayOnPage(false);
+    if (!success) {
+      // stay on page showing error, don't redirect
+    }
+  }, [softResetCity, analyzeRepo]);
 
   // Clear AI response when selection changes
   useEffect(() => {
@@ -281,125 +305,134 @@ export default function ArchitecturePage() {
       </div>
 
       {/* Main content */}
-      <div className="flex min-h-0 flex-1">
-        {/* Directory sidebar */}
-        {dirSidebarOpen && (
-          <div className="w-64 shrink-0 overflow-y-auto border-r border-slate-700/40 bg-slate-950/90 backdrop-blur-xl">
-            <div className="px-4 py-3 border-b border-slate-700/40">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200">File Explorer</h2>
-            </div>
-            <div className="px-2 py-2">
-              <DirTreeView nodes={dirTree} onSelectFile={(fileId) => {
-                // Find the building and trigger the select callback
-                const building = city.city.districts
-                  .flatMap((d) => d.buildings)
-                  .find((b) => b.id === fileId);
-                if (building) {
-                  setSelected({
-                    id: building.id,
-                    label: building.filename,
-                    layer: "frontend",
-                    connectionCount: 0,
-                    connectedTo: [],
-                  });
-                  // Trigger the ArchitectureMap to highlight this node externally
-                  setHighlightNodeId(fileId);
-                }
-              }} />
-            </div>
-          </div>
-        )}
-
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Architecture map */}
-        <div className="relative min-w-0 flex-1 overflow-auto px-5 py-4">
+        <div className="relative min-h-0 flex-1">
           <ArchitectureMap onSelect={handleSelect} city={city} highlightNodeId={highlightNodeId} onHighlightConsumed={() => setHighlightNodeId(null)} />
+
+          {/* File explorer overlay — right side */}
+          {dirSidebarOpen && (
+            <div className="absolute right-4 top-3 bottom-3 z-30 flex w-72 flex-col overflow-hidden rounded-2xl border border-white/8 bg-linear-to-b from-slate-900/95 to-slate-950/95 shadow-[0_20px_60px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.03)] backdrop-blur-2xl">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/6 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <svg className="h-4 w-4 text-cyan-400/80" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                  </svg>
+                  <h2 className="text-xs font-semibold tracking-wide text-slate-200">File Explorer</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDirSidebarOpen(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/6 hover:text-slate-300"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* File count */}
+              <div className="border-b border-white/4 px-4 py-2">
+                <span className="text-[10px] text-slate-500">{city.city.districts.flatMap(d => d.buildings).length} files</span>
+              </div>
+              {/* Tree */}
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/40">
+                <DirTreeView nodes={dirTree} onSelectFile={(fileId) => {
+                  const building = city.city.districts
+                    .flatMap((d) => d.buildings)
+                    .find((b) => b.id === fileId);
+                  if (building) {
+                    setSelected({
+                      id: building.id,
+                      label: building.filename,
+                      layer: "frontend",
+                      connectionCount: 0,
+                      connectedTo: [],
+                    });
+                    setHighlightNodeId(fileId);
+                  }
+                }} />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Side panel */}
+        {/* Details panel — bottom */}
         {selected && (
-          <div className="w-80 shrink-0 overflow-y-auto border-l border-cyan-300/15 bg-slate-950/90 backdrop-blur-xl">
-            <div className="flex flex-col gap-0">
-              {/* Header */}
-              <div className="border-b border-slate-700/50 px-5 py-4">
-                <div className="mb-1 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-white">{selected.label}</h2>
+          <div className="relative z-10 shrink-0 border-t border-slate-700/40 bg-slate-950/90 backdrop-blur-xl">
+            <div className="mx-auto max-w-7xl px-6 py-4 md:px-10">
+              <div className="flex items-start gap-6">
+                {/* Node info */}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex items-center gap-3">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ background: layerColors[selected.layer] || "#7F77DD" }}
+                    />
+                    <h2 className="text-sm font-semibold text-white">{selected.label}</h2>
+                    <span className="text-xs capitalize text-slate-400">{selected.layer} layer</span>
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="ml-auto rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-lg font-semibold text-cyan-200">{selected.connectionCount}</span>
+                      <span className="text-[10px] text-slate-500">connections</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-lg font-semibold text-emerald-200">{selected.connectedTo.length}</span>
+                      <span className="text-[10px] text-slate-500">linked nodes</span>
+                    </div>
+                    {selected.connectedTo.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {selected.connectedTo.slice(0, 8).map((name) => (
+                          <span
+                            key={name}
+                            className="rounded-md border border-slate-700/50 bg-slate-800/60 px-2 py-0.5 text-[11px] text-slate-300"
+                          >
+                            {name}
+                          </span>
+                        ))}
+                        {selected.connectedTo.length > 8 && (
+                          <span className="text-[11px] text-slate-500">+{selected.connectedTo.length - 8} more</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Ask AI */}
+                <div className="flex shrink-0 flex-col items-end gap-2">
                   <button
-                    onClick={() => setSelected(null)}
-                    className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+                    onClick={handleAskAI}
+                    disabled={aiLoading}
+                    className="rounded-lg border border-cyan-300/30 bg-linear-to-r from-cyan-400/15 to-blue-500/15 px-4 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-300/60 hover:from-cyan-400/25 hover:to-blue-500/25 disabled:opacity-50"
                   >
-                    ✕
+                    {aiLoading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 animate-spin rounded-full border border-cyan-300/40 border-t-cyan-200" />
+                        Analyzing...
+                      </span>
+                    ) : (
+                      "Ask AI"
+                    )}
                   </button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="inline-block h-2 w-2 rounded-full"
-                    style={{ background: layerColors[selected.layer] || "#7F77DD" }}
-                  />
-                  <span className="text-xs capitalize text-slate-400">{selected.layer} layer</span>
-                </div>
               </div>
-
-              {/* Stats */}
-              <div className="border-b border-slate-700/50 px-5 py-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 px-3 py-2.5">
-                    <div className="text-lg font-semibold text-cyan-200">{selected.connectionCount}</div>
-                    <div className="text-[10px] text-slate-500">Connections</div>
+              {aiResponse && (
+                <div className="mt-3 max-h-32 overflow-y-auto rounded-lg border border-slate-700/50 bg-slate-900/60 p-3">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/70">
+                    AI Analysis
                   </div>
-                  <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 px-3 py-2.5">
-                    <div className="text-lg font-semibold text-emerald-200">{selected.connectedTo.length}</div>
-                    <div className="text-[10px] text-slate-500">Linked Nodes</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Connected nodes */}
-              {selected.connectedTo.length > 0 && (
-                <div className="border-b border-slate-700/50 px-5 py-4">
-                  <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Connected To
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selected.connectedTo.map((name) => (
-                      <span
-                        key={name}
-                        className="rounded-md border border-slate-700/50 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-300"
-                      >
-                        {name}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
+                    {aiResponse}
+                  </p>
                 </div>
               )}
-
-              {/* Ask AI */}
-              <div className="px-5 py-4">
-                <button
-                  onClick={handleAskAI}
-                  disabled={aiLoading}
-                  className="w-full rounded-lg border border-cyan-300/30 bg-linear-to-r from-cyan-400/15 to-blue-500/15 px-4 py-2.5 text-xs font-semibold text-cyan-100 transition hover:border-cyan-300/60 hover:from-cyan-400/25 hover:to-blue-500/25 disabled:opacity-50"
-                >
-                  {aiLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="h-3 w-3 animate-spin rounded-full border border-cyan-300/40 border-t-cyan-200" />
-                      Analyzing...
-                    </span>
-                  ) : (
-                    "Ask AI about this node"
-                  )}
-                </button>
-
-                {aiResponse && (
-                  <div className="mt-3 rounded-lg border border-slate-700/50 bg-slate-900/60 p-3">
-                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/70">
-                      AI Analysis
-                    </div>
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
-                      {aiResponse}
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}

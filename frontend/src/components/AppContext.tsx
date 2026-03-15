@@ -66,6 +66,7 @@ interface AppContextValue {
   handleTourNext: () => void;
   handleTourPrev: () => void;
   resetCity: () => void;
+  softResetCity: () => void;
   analyzeRepo: (overrideRepoUrl?: string) => Promise<boolean>;
   isAnalyzing: boolean;
 }
@@ -337,6 +338,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSearchQuery("");
   }, []);
 
+  const softResetCity = useCallback(() => {
+    setCity(null);
+    setOnboarding(null);
+    setSelectedBuilding(null);
+    setSelectedDistrictId(null);
+    setHighlightedBuildings([]);
+    setCameraTarget(null);
+    setSearchQuery("");
+    setError(null);
+  }, []);
+
   const value: AppContextValue = {
     city, setCity,
     onboarding, setOnboarding,
@@ -366,6 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     handleTourNext,
     handleTourPrev,
     resetCity,
+    softResetCity,
     analyzeRepo,
     isAnalyzing,
   };

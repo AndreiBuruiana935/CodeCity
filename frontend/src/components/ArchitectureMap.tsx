@@ -737,16 +737,16 @@ export default function ArchitectureMap({ onSelect, city, highlightNodeId, onHig
   return (
     <div className="w-full">
       {/* filter buttons */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <div className="mb-2 flex flex-wrap items-center justify-center gap-2">
         <span className="mr-1 text-[11px] text-slate-400">Layer:</span>
         {FILTER_BUTTONS.map((btn) => (
           <button
             key={btn.id}
             onClick={() => handleFilter(btn.id)}
-            className={`rounded-full border border-slate-600/50 px-3 py-1 text-[11px] transition ${
+            className={`rounded-full border px-3.5 py-1 text-[11px] font-medium transition ${
               activeFilters.has(btn.id)
-                ? "border-cyan-300/60 bg-white text-slate-950"
-                : "bg-transparent text-slate-400 hover:text-slate-200"
+                ? "border-cyan-300/60 bg-white text-slate-950 shadow-[0_0_10px_rgba(103,232,249,0.2)]"
+                : "border-slate-600/50 bg-transparent text-slate-400 hover:border-slate-500 hover:text-slate-200"
             }`}
           >
             {btn.label}
