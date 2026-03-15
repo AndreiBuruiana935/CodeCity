@@ -239,8 +239,8 @@ export default function ProjectsPage() {
         </div>
 
         <div className="grid h-[calc(100vh-11rem)] min-h-0 flex-1 gap-4 lg:grid-cols-[0.95fr_1.25fr]">
-          <section className="min-h-0 overflow-hidden rounded-2xl border border-slate-600/45 bg-slate-950/75 p-4 backdrop-blur-xl">
-            <div className="mb-3 rounded-xl border border-slate-700/60 bg-slate-900/50 p-3">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-600/45 bg-slate-950/75 p-4 backdrop-blur-xl">
+            <div className="mb-3 shrink-0 rounded-xl border border-slate-700/60 bg-slate-900/50 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
                 Analyze External Repository
               </p>
@@ -280,7 +280,7 @@ export default function ProjectsPage() {
               </div>
             </div>
 
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 shrink-0 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-200">
                 Select Project
               </h2>
@@ -311,10 +311,10 @@ export default function ProjectsPage() {
               value={repoSearch}
               onChange={(e) => setRepoSearch(e.target.value)}
               placeholder="Search history and repos"
-              className="mb-3 w-full rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+              className="mb-3 w-full shrink-0 rounded-lg border border-slate-600/50 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
             />
 
-            <div className="h-full min-h-0 space-y-3 overflow-y-auto pr-1">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               <div>
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   Recent Repositories
